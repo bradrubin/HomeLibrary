@@ -9,6 +9,8 @@ class BookRepository(private val bookDao: BookDao) {
 
     suspend fun getBook(id: Long): Book? = bookDao.getById(id)
 
+    suspend fun findByIsbn13(isbn13: String): Book? = bookDao.getByIsbn13(isbn13)
+
     suspend fun save(book: Book): Long {
         return if (book.id == 0L) {
             bookDao.insert(book)

@@ -15,6 +15,9 @@ interface BookDao {
     @Query("SELECT * FROM books WHERE id = :id")
     suspend fun getById(id: Long): Book?
 
+    @Query("SELECT * FROM books WHERE isbn13 = :isbn13 ORDER BY id ASC LIMIT 1")
+    suspend fun getByIsbn13(isbn13: String): Book?
+
     @Insert
     suspend fun insert(book: Book): Long
 

@@ -7,6 +7,9 @@
         android:label="Book Catalog"
         android:theme="@style/Theme.BookCatalog"
         android:supportsRtl="true">
+        <meta-data
+            android:name="com.google.mlkit.vision.DEPENDENCIES"
+            android:value="barcode_ui" />
         <activity
             android:name=".MainActivity"
             android:exported="true"

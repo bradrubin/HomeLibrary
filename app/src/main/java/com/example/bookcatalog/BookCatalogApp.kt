@@ -33,7 +33,9 @@ class AppContainer(application: Application) {
         application,
         AppDatabase::class.java,
         "book-catalog.db",
-    ).build()
+    )
+        .addMigrations(AppDatabase.MIGRATION_1_2)
+        .build()
 
     val bookRepository = BookRepository(database.bookDao())
 

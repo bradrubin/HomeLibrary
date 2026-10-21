@@ -6,7 +6,7 @@ import androidx.room.PrimaryKey
 
 @Entity(
     tableName = "books",
-    indices = [Index(value = ["isbn13"], unique = true)],
+    indices = [Index(value = ["isbn13"])],
 )
 data class Book(
     @PrimaryKey(autoGenerate = true)

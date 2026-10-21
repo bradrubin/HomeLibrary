@@ -39,3 +39,14 @@ class IsbnLookupViewModel(
     suspend fun lookup(isbn13: String): MetadataLookupResult =
         metadataRepository.lookup(isbn13)
 }
+
+class BarcodeScanViewModel(
+    private val repository: BookRepository,
+    private val metadataRepository: BookMetadataRepository,
+) : ViewModel() {
+    suspend fun findExistingBook(isbn13: String): Book? =
+        repository.findByIsbn13(isbn13)
+
+    suspend fun lookup(isbn13: String): MetadataLookupResult =
+        metadataRepository.lookup(isbn13)
+}

@@ -54,6 +54,7 @@ fun LibraryScreen(
     viewModel: LibraryViewModel,
     coverDirectory: File,
     onAddBook: () -> Unit,
+    onScanBook: () -> Unit,
     onLookupBook: () -> Unit,
     onEditBook: (Long) -> Unit,
 ) {
@@ -75,6 +76,13 @@ fun LibraryScreen(
                     expanded = addMenuExpanded,
                     onDismissRequest = { addMenuExpanded = false },
                 ) {
+                    DropdownMenuItem(
+                        text = { Text("Scan barcode") },
+                        onClick = {
+                            addMenuExpanded = false
+                            onScanBook()
+                        },
+                    )
                     DropdownMenuItem(
                         text = { Text("Add manually") },
                         onClick = {

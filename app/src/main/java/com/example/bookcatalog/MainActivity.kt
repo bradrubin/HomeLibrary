@@ -23,6 +23,8 @@ import androidx.navigation.navArgument
 import com.example.bookcatalog.data.BookRepository
 import com.example.bookcatalog.data.metadata.BookMetadataRepository
 import com.example.bookcatalog.data.metadata.MetadataLookupResult
+import com.example.bookcatalog.ui.BarcodeScanScreen
+import com.example.bookcatalog.ui.BarcodeScanViewModel
 import com.example.bookcatalog.ui.BookEditScreen
 import com.example.bookcatalog.ui.BookEditViewModel
 import com.example.bookcatalog.ui.IsbnLookupScreen
@@ -73,6 +75,7 @@ private fun BookCatalogNavigation(
                 viewModel = viewModel,
                 coverDirectory = coverDirectory,
                 onAddBook = { navController.navigate("edit/new") },
+                onScanBook = { navController.navigate("scan") },
                 onLookupBook = { navController.navigate("lookup") },
                 onEditBook = { id -> navController.navigate("edit/$id") },
             )
@@ -89,6 +92,29 @@ private fun BookCatalogNavigation(
                     pendingLookup = result
                     navController.navigate("edit/new")
                 },
+                onCancel = { navController.popBackStack() },
+            )
+        }
+        composable("scan") {
+            val viewModel: BarcodeScanViewModel = viewModel(
+                factory = viewModelFactory {
+                    initializer {
+                        BarcodeScanViewModel(repository, metadataRepository)
+                    }
+                },
+            )
+            BarcodeScanScreen(
+                viewModel = viewModel,
+                onBookFound = { result ->
+                    pendingLookup = result
+                    navController.navigate("edit/new")
+                },
+                onOpenExisting = { id ->
+                    navController.navigate("edit/$id") {
+                        popUpTo("scan") { inclusive = true }
+                    }
+                },
+                onEnterIsbnManually = { navController.navigate("lookup") },
                 onCancel = { navController.popBackStack() },
             )
         }
