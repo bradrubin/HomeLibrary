@@ -7,7 +7,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -41,26 +43,53 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.bookcatalog.data.db.Book
+import coil.compose.AsyncImage
+import androidx.compose.ui.layout.ContentScale
+import java.io.File
 import kotlinx.coroutines.launch
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
 fun LibraryScreen(
     viewModel: LibraryViewModel,
+    coverDirectory: File,
     onAddBook: () -> Unit,
+    onLookupBook: () -> Unit,
     onEditBook: (Long) -> Unit,
 ) {
     val books by viewModel.books.collectAsState()
     val scope = rememberCoroutineScope()
     var bookToDelete by remember { mutableStateOf<Book?>(null) }
+    var addMenuExpanded by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
             TopAppBar(title = { Text("Book Catalog") })
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = onAddBook) {
-                Icon(Icons.Default.Add, contentDescription = "Add book")
+            Box {
+                FloatingActionButton(onClick = { addMenuExpanded = true }) {
+                    Icon(Icons.Default.Add, contentDescription = "Add book")
+                }
+                DropdownMenu(
+                    expanded = addMenuExpanded,
+                    onDismissRequest = { addMenuExpanded = false },
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Add manually") },
+                        onClick = {
+                            addMenuExpanded = false
+                            onAddBook()
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Enter ISBN") },
+                        onClick = {
+                            addMenuExpanded = false
+                            onLookupBook()
+                        },
+                    )
+                }
             }
         },
     ) { contentPadding ->
@@ -100,6 +129,7 @@ fun LibraryScreen(
                 items(books, key = { it.id }) { book ->
                     BookListItem(
                         book = book,
+                        coverDirectory = coverDirectory,
                         onClick = { onEditBook(book.id) },
                         onEdit = { onEditBook(book.id) },
                         onDelete = { bookToDelete = book },
@@ -136,6 +166,7 @@ fun LibraryScreen(
 @Composable
 private fun BookListItem(
     book: Book,
+    coverDirectory: File,
     onClick: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
@@ -145,11 +176,22 @@ private fun BookListItem(
     ListItem(
         modifier = Modifier.clickable(onClick = onClick),
         leadingContent = {
-            Icon(
-                imageVector = Icons.Default.Book,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-            )
+            if (book.coverFile != null) {
+                AsyncImage(
+                    model = File(coverDirectory, book.coverFile),
+                    contentDescription = "Cover of ${book.title}",
+                    modifier = Modifier
+                        .width(48.dp)
+                        .height(64.dp),
+                    contentScale = ContentScale.Crop,
+                )
+            } else {
+                Icon(
+                    imageVector = Icons.Default.Book,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+            }
         },
         headlineContent = {
             Text(book.title, maxLines = 1, overflow = TextOverflow.Ellipsis)

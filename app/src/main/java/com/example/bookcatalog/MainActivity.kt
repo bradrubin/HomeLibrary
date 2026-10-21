@@ -7,6 +7,10 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
@@ -17,16 +21,21 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.example.bookcatalog.data.BookRepository
+import com.example.bookcatalog.data.metadata.BookMetadataRepository
+import com.example.bookcatalog.data.metadata.MetadataLookupResult
 import com.example.bookcatalog.ui.BookEditScreen
 import com.example.bookcatalog.ui.BookEditViewModel
+import com.example.bookcatalog.ui.IsbnLookupScreen
+import com.example.bookcatalog.ui.IsbnLookupViewModel
 import com.example.bookcatalog.ui.LibraryScreen
 import com.example.bookcatalog.ui.LibraryViewModel
 import com.example.bookcatalog.ui.theme.BookCatalogTheme
+import java.io.File
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val repository = (application as BookCatalogApp).container.bookRepository
+        val container = (application as BookCatalogApp).container
 
         setContent {
             BookCatalogTheme(darkTheme = isSystemInDarkTheme()) {
@@ -34,7 +43,11 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background,
                 ) {
-                    BookCatalogNavigation(repository)
+                    BookCatalogNavigation(
+                        repository = container.bookRepository,
+                        metadataRepository = container.metadataRepository,
+                        coverDirectory = container.coverStore.coverDirectory,
+                    )
                 }
             }
         }
@@ -42,8 +55,13 @@ class MainActivity : ComponentActivity() {
 }
 
 @androidx.compose.runtime.Composable
-private fun BookCatalogNavigation(repository: BookRepository) {
+private fun BookCatalogNavigation(
+    repository: BookRepository,
+    metadataRepository: BookMetadataRepository,
+    coverDirectory: File,
+) {
     val navController = rememberNavController()
+    var pendingLookup by remember { mutableStateOf<MetadataLookupResult?>(null) }
     NavHost(navController = navController, startDestination = "library") {
         composable("library") {
             val viewModel: LibraryViewModel = viewModel(
@@ -53,8 +71,25 @@ private fun BookCatalogNavigation(repository: BookRepository) {
             )
             LibraryScreen(
                 viewModel = viewModel,
+                coverDirectory = coverDirectory,
                 onAddBook = { navController.navigate("edit/new") },
+                onLookupBook = { navController.navigate("lookup") },
                 onEditBook = { id -> navController.navigate("edit/$id") },
+            )
+        }
+        composable("lookup") {
+            val viewModel: IsbnLookupViewModel = viewModel(
+                factory = viewModelFactory {
+                    initializer { IsbnLookupViewModel(metadataRepository) }
+                },
+            )
+            IsbnLookupScreen(
+                viewModel = viewModel,
+                onLookupComplete = { result ->
+                    pendingLookup = result
+                    navController.navigate("edit/new")
+                },
+                onCancel = { navController.popBackStack() },
             )
         }
         composable(
@@ -70,7 +105,21 @@ private fun BookCatalogNavigation(repository: BookRepository) {
             BookEditScreen(
                 bookId = bookId,
                 viewModel = viewModel,
-                onDone = { navController.popBackStack() },
+                initialBook = pendingLookup?.book.takeIf { bookId == null },
+                lookupMessage = pendingLookup?.message.takeIf { bookId == null },
+                lookupWarning = pendingLookup?.warning.takeIf { bookId == null },
+                coverDirectory = coverDirectory,
+                onDone = {
+                    pendingLookup = null
+                    navController.popBackStack()
+                },
+                onSaved = {
+                    pendingLookup = null
+                    navController.navigate("library") {
+                        popUpTo("library") { inclusive = false }
+                        launchSingleTop = true
+                    }
+                },
             )
         }
     }

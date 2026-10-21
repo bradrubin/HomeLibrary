@@ -27,6 +27,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -42,7 +43,9 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.example.bookcatalog.data.db.Book
 import android.database.sqlite.SQLiteConstraintException
+import coil.compose.AsyncImage
 import kotlinx.coroutines.launch
+import java.io.File
 
 private data class BookDraft(
     val isbn13: String = "",
@@ -60,6 +63,10 @@ private data class BookDraft(
     val notes: String = "",
     val rating: String = "",
     val readStatus: String = "unread",
+    val coverFile: String = "",
+    val coverSourceUrl: String = "",
+    val dataSource: String = "",
+    val dateAdded: Long = 0L,
 ) {
     fun toBook(existingBook: Book?): Book = Book(
         id = existingBook?.id ?: 0L,
@@ -74,14 +81,16 @@ private data class BookDraft(
         language = language.optional(),
         subjects = subjects.optional(),
         description = description.optional(),
-        coverFile = existingBook?.coverFile,
-        coverSourceUrl = existingBook?.coverSourceUrl,
-        dataSource = existingBook?.dataSource,
+        coverFile = existingBook?.coverFile ?: coverFile.optional(),
+        coverSourceUrl = existingBook?.coverSourceUrl ?: coverSourceUrl.optional(),
+        dataSource = existingBook?.dataSource ?: dataSource.optional(),
         location = location.optional(),
         notes = notes.optional(),
         rating = rating.toIntOrNull(),
         readStatus = readStatus.trim().takeIf(String::isNotBlank),
-        dateAdded = existingBook?.dateAdded ?: System.currentTimeMillis(),
+        dateAdded = existingBook?.dateAdded
+            ?: dateAdded.takeIf { it > 0L }
+            ?: System.currentTimeMillis(),
         dateModified = System.currentTimeMillis(),
     )
 
@@ -102,6 +111,10 @@ private data class BookDraft(
             notes = book.notes.orEmpty(),
             rating = book.rating?.toString().orEmpty(),
             readStatus = book.readStatus ?: "unread",
+            coverFile = book.coverFile.orEmpty(),
+            coverSourceUrl = book.coverSourceUrl.orEmpty(),
+            dataSource = book.dataSource.orEmpty(),
+            dateAdded = book.dateAdded,
         )
     }
 }
@@ -124,6 +137,10 @@ private val BookDraftSaver: Saver<BookDraft, Any> = listSaver<BookDraft, String>
             it.notes,
             it.rating,
             it.readStatus,
+            it.coverFile,
+            it.coverSourceUrl,
+            it.dataSource,
+            it.dateAdded.toString(),
         )
     },
     restore = { values ->
@@ -143,6 +160,10 @@ private val BookDraftSaver: Saver<BookDraft, Any> = listSaver<BookDraft, String>
             notes = values.getOrNull(12).orEmpty(),
             rating = values.getOrNull(13).orEmpty(),
             readStatus = values.getOrNull(14) ?: "unread",
+            coverFile = values.getOrNull(15).orEmpty(),
+            coverSourceUrl = values.getOrNull(16).orEmpty(),
+            dataSource = values.getOrNull(17).orEmpty(),
+            dateAdded = values.getOrNull(18)?.toLongOrNull() ?: 0L,
         )
     },
 )
@@ -152,12 +173,17 @@ private val BookDraftSaver: Saver<BookDraft, Any> = listSaver<BookDraft, String>
 fun BookEditScreen(
     bookId: Long?,
     viewModel: BookEditViewModel,
+    initialBook: Book? = null,
+    lookupMessage: String? = null,
+    lookupWarning: String? = null,
+    coverDirectory: File? = null,
     onDone: () -> Unit,
+    onSaved: () -> Unit = onDone,
 ) {
     var draft by rememberSaveable(bookId, stateSaver = BookDraftSaver) {
-        mutableStateOf(BookDraft())
+        mutableStateOf(initialBook?.let(BookDraft::from) ?: BookDraft())
     }
-    var originalBook by remember(bookId) { mutableStateOf<Book?>(null) }
+    var originalBook by remember(bookId, initialBook) { mutableStateOf(initialBook) }
     var initialized by rememberSaveable(bookId) { mutableStateOf(false) }
     var showDeleteConfirmation by remember { mutableStateOf(false) }
     var formError by rememberSaveable(bookId) { mutableStateOf<String?>(null) }
@@ -169,6 +195,8 @@ fun BookEditScreen(
             if (!initialized) {
                 originalBook?.let { draft = BookDraft.from(it) }
             }
+        } else if (!initialized) {
+            originalBook = initialBook
         }
         initialized = true
     }
@@ -186,7 +214,7 @@ fun BookEditScreen(
                     }
                 },
                 actions = {
-                    if (originalBook != null) {
+                    originalBook?.takeIf { it.id != 0L }?.let {
                         IconButton(onClick = { showDeleteConfirmation = true }) {
                             Icon(Icons.Default.Delete, contentDescription = "Delete book")
                         }
@@ -226,7 +254,7 @@ fun BookEditScreen(
                                     viewModel.save(
                                         draft.toBook(existingBook = originalBook),
                                     )
-                                    onDone()
+                                    onSaved()
                                 } catch (_: SQLiteConstraintException) {
                                     formError = "A book with that ISBN-13 is already in your library."
                                 }
@@ -251,13 +279,31 @@ fun BookEditScreen(
             formError?.let {
                 Text(it, color = MaterialTheme.colorScheme.error)
             }
+            lookupMessage?.let {
+                Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            lookupWarning?.let {
+                Text(it, color = MaterialTheme.colorScheme.error)
+            }
+            originalBook?.coverFile?.let { coverFile ->
+                coverDirectory?.let { directory ->
+                    AsyncImage(
+                        model = File(directory, coverFile),
+                        contentDescription = "Book cover",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 8.dp),
+                        contentScale = ContentScale.Fit,
+                    )
+                }
+            }
             BookTextField("Title", draft.title, { draft = draft.copy(title = it) }, required = true)
             BookTextField("Subtitle", draft.subtitle, { draft = draft.copy(subtitle = it) })
             BookTextField(
                 "Authors",
                 draft.authors,
                 { draft = draft.copy(authors = it) },
-                supportingText = "Last, First; Last, First",
+                placeholder = "e.g. Doe, Jane; Smith, John",
             )
             BookTextField("ISBN-13", draft.isbn13, { draft = draft.copy(isbn13 = it) })
             BookTextField("ISBN-10", draft.isbn10, { draft = draft.copy(isbn10 = it) })
@@ -333,6 +379,7 @@ private fun BookTextField(
     singleLine: Boolean = true,
     keyboardType: KeyboardType = KeyboardType.Text,
     supportingText: String? = null,
+    placeholder: String? = null,
 ) {
     val bringIntoViewRequester = remember { BringIntoViewRequester() }
     val scope = rememberCoroutineScope()
@@ -341,6 +388,14 @@ private fun BookTextField(
         value = value,
         onValueChange = onValueChange,
         label = { Text(if (required) "$label *" else label) },
+        placeholder = placeholder?.let { example ->
+            {
+                Text(
+                    example,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
+                )
+            }
+        },
         supportingText = supportingText?.let { text -> { Text(text) } },
         modifier = Modifier
             .fillMaxWidth()
