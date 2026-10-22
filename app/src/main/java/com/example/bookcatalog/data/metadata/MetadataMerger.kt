@@ -40,6 +40,7 @@ object MetadataMerger {
             publisher = open?.publisher ?: google?.publisher ?: loc?.publisher,
             publishedDate = publishedDate,
             pageCount = google?.pageCount ?: open?.pageCount ?: loc?.pageCount,
+            format = open?.format ?: loc?.format ?: google?.format,
             language = Language.name(google?.language ?: loc?.language ?: open?.language) ?: Language.DEFAULT,
             // Publisher-supplied BISAC headings beat cataloged subjects, which beat retail categories.
             subjects = loc?.bisacSubjects.joined()

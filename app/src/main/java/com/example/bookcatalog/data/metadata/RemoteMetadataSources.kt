@@ -2,7 +2,11 @@ package com.example.bookcatalog.data.metadata
 
 import com.example.bookcatalog.data.remote.GoogleBooksApi
 import com.example.bookcatalog.data.remote.OpenLibraryApi
+import com.example.bookcatalog.domain.BookFormat
 import com.example.bookcatalog.domain.IsbnUtils
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 
 private fun com.example.bookcatalog.data.remote.GoogleBooksVolumeInfoDto.matchesIsbn13(
     isbn13: String,
@@ -18,9 +22,10 @@ class OpenLibraryMetadataSource(
 ) : BookMetadataSource {
     override val name = "OpenLibrary"
 
-    override suspend fun fetch(isbn13: String): BookMetadata? {
-        val record = api.getBook("ISBN:$isbn13")["ISBN:$isbn13"] ?: return null
-        return BookMetadata(
+    override suspend fun fetch(isbn13: String): BookMetadata? = coroutineScope {
+        val edition = async { editionFormat(isbn13) }
+        val record = api.getBook("ISBN:$isbn13")["ISBN:$isbn13"] ?: return@coroutineScope null
+        BookMetadata(
             title = record.title.nonBlank(),
             subtitle = record.subtitle.nonBlank(),
             authors = record.authors.orEmpty().mapNotNull { it.name.nonBlank() },
@@ -31,8 +36,19 @@ class OpenLibraryMetadataSource(
             coverUrl = (record.cover?.large ?: record.cover?.medium ?: record.cover?.small)
                 .nonBlank()
                 ?.replaceFirst("http://", "https://"),
+            format = edition.await(),
         ).takeIf(BookMetadata::hasDetails)
     }
+
+    /** The format is a nicety, so a missing or failed edition record doesn't fail the lookup. */
+    private suspend fun editionFormat(isbn13: String): String? =
+        try {
+            BookFormat.fromSource(api.getEdition(isbn13).physicalFormat)
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            null
+        }
 }
 
 class GoogleBooksMetadataSource(

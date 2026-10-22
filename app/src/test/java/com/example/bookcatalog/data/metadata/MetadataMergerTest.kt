@@ -74,6 +74,25 @@ class MetadataMergerTest {
     }
 
     @Test
+    fun prefersOpenLibraryFormatThenLibraryOfCongress() {
+        val both = MetadataMerger.merge(
+            isbn13 = "9780306406157",
+            openLibrary = BookMetadata(title = "Title", format = "Softcover"),
+            googleBooks = null,
+            libraryOfCongress = BookMetadata(title = "Title", format = "Hardcover"),
+        )
+        val catalogOnly = MetadataMerger.merge(
+            isbn13 = "9780306406157",
+            openLibrary = BookMetadata(title = "Title"),
+            googleBooks = null,
+            libraryOfCongress = BookMetadata(title = "Title", format = "Hardcover"),
+        )
+
+        assertEquals("Softcover", both?.format)
+        assertEquals("Hardcover", catalogOnly?.format)
+    }
+
+    @Test
     fun returnsNullWhenNeitherSourceHasDetails() {
         assertNull(MetadataMerger.merge("9780306406157", null, null))
         assertTrue(MetadataMerger.merge("9780306406157", BookMetadata(), BookMetadata()) == null)

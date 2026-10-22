@@ -18,6 +18,8 @@ data class BookMetadata(
     val bisacSubjects: List<String> = emptyList(),
     val description: String? = null,
     val coverUrl: String? = null,
+    /** One of the [com.example.bookcatalog.domain.BookFormat] choices. */
+    val format: String? = null,
 ) {
     val hasDetails: Boolean
         get() = listOf(

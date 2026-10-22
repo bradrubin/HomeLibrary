@@ -5,6 +5,7 @@ import okhttp3.ResponseBody
 import retrofit2.http.GET
 import retrofit2.http.Header
 import retrofit2.http.Headers
+import retrofit2.http.Path
 import retrofit2.http.Query
 
 interface OpenLibraryApi {
@@ -15,7 +16,16 @@ interface OpenLibraryApi {
         @Query("format") format: String = "json",
         @Query("jscmd") command: String = "data",
     ): Map<String, OpenLibraryBookDto>
+
+    /** The edition record, which has the format that the books API leaves out. */
+    @Headers("User-Agent: BookCatalog/1.0 (personal home library)")
+    @GET("isbn/{isbn}.json")
+    suspend fun getEdition(@Path("isbn") isbn13: String): OpenLibraryEditionDto
 }
+
+data class OpenLibraryEditionDto(
+    @Json(name = "physical_format") val physicalFormat: String? = null,
+)
 
 interface GoogleBooksApi {
     @GET("books/v1/volumes")

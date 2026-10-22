@@ -33,6 +33,7 @@ class LibraryOfCongressMetadataSourceTest {
             result.bisacSubjects,
         )
         assertEquals("Alicia Berenson's life is seemingly perfect.", result.description)
+        assertEquals("Hardcover", result.format)
     }
 
     @Test
@@ -123,7 +124,8 @@ class LibraryOfCongressMetadataSourceTest {
               <subject authority="bisacsh"><topic>FICTION / Thrillers / Psychological</topic></subject>
               <subject authority="bisacsh"><topic>FICTION / Thrillers / Suspense.</topic></subject>
               <subject authority="lcsh"><geographic>London (England)</geographic><genre>Fiction</genre></subject>
-              <identifier type="isbn">9781250301697</identifier>
+              <identifier type="isbn">9781250304421 (paperback)</identifier>
+              <identifier type="isbn">9781250301697 (hardcover)</identifier>
               <identifier type="isbn" invalid="yes">9781250230782</identifier>
             </mods>
         """.trimIndent()

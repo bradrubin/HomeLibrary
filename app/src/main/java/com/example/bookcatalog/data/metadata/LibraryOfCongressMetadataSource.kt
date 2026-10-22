@@ -1,6 +1,7 @@
 package com.example.bookcatalog.data.metadata
 
 import com.example.bookcatalog.data.remote.LibraryOfCongressApi
+import com.example.bookcatalog.domain.BookFormat
 import com.example.bookcatalog.domain.IsbnUtils
 import org.w3c.dom.Element
 import org.xml.sax.InputSource
@@ -42,7 +43,7 @@ internal object ModsRecordParser {
         val record = records.firstOrNull { it.hasValidIsbn(isbn13) }
             ?: records.firstOrNull()
             ?: return null
-        return record.toMetadata().takeIf(BookMetadata::hasDetails)
+        return record.toMetadata().copy(format = record.isbnQualifierFormat(isbn13)).takeIf(BookMetadata::hasDetails)
     }
 
     private fun documentBuilderFactory() = DocumentBuilderFactory.newInstance().apply {
@@ -90,6 +91,15 @@ internal object ModsRecordParser {
                 identifier.getAttribute("invalid") != "yes" &&
                 IsbnUtils.toIsbn13(identifier.textContent.trim().substringBefore(' ')) == isbn13
         }
+
+    /** Catalogers note an edition's binding after its ISBN, as in "9780385533225 (pbk.)". */
+    private fun Element.isbnQualifierFormat(isbn13: String): String? =
+        children("identifier")
+            .filter { it.getAttribute("type") == "isbn" }
+            .map { it.textContent.trim() }
+            .firstOrNull { IsbnUtils.toIsbn13(it.substringBefore(' ')) == isbn13 }
+            ?.substringAfter(' ', "")
+            ?.let(BookFormat::fromSource)
 
     private fun Element.authors(): List<String> =
         children("name")
