@@ -2,6 +2,7 @@ package com.example.bookcatalog.data.metadata
 
 import com.example.bookcatalog.data.db.Book
 import com.example.bookcatalog.domain.IsbnUtils
+import com.example.bookcatalog.domain.TitleCase
 
 object MetadataMerger {
     fun merge(
@@ -27,8 +28,8 @@ object MetadataMerger {
         return Book(
             isbn13 = isbn13,
             isbn10 = IsbnUtils.isbn13To10(isbn13),
-            title = open?.title ?: google?.title.orEmpty(),
-            subtitle = open?.subtitle ?: google?.subtitle,
+            title = TitleCase.format(open?.title ?: google?.title.orEmpty()),
+            subtitle = (open?.subtitle ?: google?.subtitle)?.let(TitleCase::format),
             authors = open?.authors?.takeIf(List<String>::isNotEmpty)
                 ?.joinToString("; ")
                 ?: google?.authors?.takeIf(List<String>::isNotEmpty)?.joinToString("; "),

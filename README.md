@@ -15,6 +15,10 @@ GOOGLE_BOOKS_API_KEY=your_key
 
 Open Library lookups work without a key. The app queries both metadata sources
 in parallel and remains usable without network access for saved books.
+Titles and subtitles use Chicago-style title capitalization: principal words
+are capitalized, short articles/conjunctions/prepositions are lowercased except
+at the beginning/end and after a colon, while mixed-case names and known
+acronyms are preserved. This is applied to metadata results and when saving edits.
 
 To map lookup subjects to BISAC headings, add the HomeChat OpenAI-
 compatible endpoint settings to the same ignored file:

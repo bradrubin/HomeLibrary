@@ -51,6 +51,7 @@ import androidx.core.content.FileProvider
 import com.example.bookcatalog.data.db.Book
 import com.example.bookcatalog.data.covers.CoverStore
 import com.example.bookcatalog.data.covers.NormalizedCrop
+import com.example.bookcatalog.domain.TitleCase
 import android.database.sqlite.SQLiteConstraintException
 import coil.compose.AsyncImage
 import kotlinx.coroutines.launch
@@ -85,8 +86,8 @@ private data class BookDraft(
         id = existingBook?.id ?: 0L,
         isbn13 = isbn13.normalizedIsbn().takeIf(String::isNotBlank),
         isbn10 = isbn10.normalizedIsbn().takeIf(String::isNotBlank),
-        title = title.trim(),
-        subtitle = subtitle.optional(),
+        title = TitleCase.format(title.trim()),
+        subtitle = subtitle.optional()?.let(TitleCase::format),
         authors = authors.optional(),
         publisher = publisher.optional(),
         publishedDate = publishedDate.optional(),

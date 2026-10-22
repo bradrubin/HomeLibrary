@@ -32,7 +32,7 @@ class MetadataMergerTest {
         )
 
         requireNotNull(book)
-        assertEquals("Open title", book.title)
+        assertEquals("Open Title", book.title)
         assertEquals("Doe, Jane", book.authors)
         assertEquals("Open publisher", book.publisher)
         assertEquals("1999-05", book.publishedDate)
@@ -52,7 +52,7 @@ class MetadataMergerTest {
         )
 
         requireNotNull(book)
-        assertEquals("Open title", book.title)
+        assertEquals("Open Title", book.title)
         assertEquals("Doe, Jane", book.authors)
     }
 
@@ -60,5 +60,21 @@ class MetadataMergerTest {
     fun returnsNullWhenNeitherSourceHasDetails() {
         assertNull(MetadataMerger.merge("9780306406157", null, null))
         assertTrue(MetadataMerger.merge("9780306406157", BookMetadata(), BookMetadata()) == null)
+    }
+
+    @Test
+    fun formatsTitleAndSubtitleUsingTitleCase() {
+        val book = MetadataMerger.merge(
+            isbn13 = "9780306406157",
+            openLibrary = BookMetadata(
+                title = "the lord of the rings",
+                subtitle = "the fellowship of the ring",
+            ),
+            googleBooks = null,
+        )
+
+        requireNotNull(book)
+        assertEquals("The Lord of the Rings", book.title)
+        assertEquals("The Fellowship of the Ring", book.subtitle)
     }
 }
