@@ -12,6 +12,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
@@ -28,6 +29,8 @@ import com.example.bookcatalog.ui.BarcodeScanScreen
 import com.example.bookcatalog.ui.BarcodeScanViewModel
 import com.example.bookcatalog.ui.BookEditScreen
 import com.example.bookcatalog.ui.BookEditViewModel
+import com.example.bookcatalog.ui.ImportExportScreen
+import com.example.bookcatalog.ui.ImportExportViewModel
 import com.example.bookcatalog.ui.IsbnLookupScreen
 import com.example.bookcatalog.ui.IsbnLookupViewModel
 import com.example.bookcatalog.ui.LibraryScreen
@@ -51,6 +54,15 @@ class MainActivity : ComponentActivity() {
                         metadataRepository = container.metadataRepository,
                         coverDirectory = container.coverStore.coverDirectory,
                         coverStore = container.coverStore,
+                        importExportViewModelFactory = viewModelFactory {
+                            initializer {
+                                ImportExportViewModel(
+                                    container.libraryExporter,
+                                    container.libraryImporter,
+                                    applicationContext.contentResolver,
+                                )
+                            }
+                        },
                     )
                 }
             }
@@ -64,6 +76,7 @@ private fun BookCatalogNavigation(
     metadataRepository: BookMetadataRepository,
     coverDirectory: File,
     coverStore: CoverStore,
+    importExportViewModelFactory: ViewModelProvider.Factory,
 ) {
     val navController = rememberNavController()
     var pendingLookup by remember { mutableStateOf<MetadataLookupResult?>(null) }
@@ -81,6 +94,13 @@ private fun BookCatalogNavigation(
                 onScanBook = { navController.navigate("scan") },
                 onLookupBook = { navController.navigate("lookup") },
                 onEditBook = { id -> navController.navigate("edit/$id") },
+                onImportExport = { navController.navigate("import-export") },
+            )
+        }
+        composable("import-export") {
+            ImportExportScreen(
+                viewModel = viewModel(factory = importExportViewModelFactory),
+                onBack = { navController.popBackStack() },
             )
         }
         composable("lookup") {

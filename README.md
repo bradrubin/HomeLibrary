@@ -60,3 +60,13 @@ Brave. Without a key, the model writes only from its own knowledge. Existing boo
 **Summarize description** (or **Write description** when it is empty).
 When taking a cover photo, the app detects a likely book-cover rectangle on-device.
 The crop remains adjustable, and low-confidence detection falls back to the manual frame.
+
+Import and export are under **Import / Export** in the library's menu. A ZIP
+backup holds `books.csv` and a `covers/` folder; **CSV only** has no images and
+is meant for spreadsheets. The CSV is UTF-8 with a byte order mark, with the
+columns listed in `SPEC.md`. Import accepts either file, matches columns by
+header name in any order, and asks once whether books whose ISBN is already in
+the library are skipped, overwritten, or added as another copy. Columns missing
+from the file leave those fields unchanged when overwriting. Rows with an
+invalid ISBN are imported without one, and the summary lists them by row. An
+option re-downloads missing covers from `cover_source_url`, about one per second.

@@ -7,6 +7,8 @@ import com.example.bookcatalog.BuildConfig
 import com.example.bookcatalog.data.covers.CoverStore
 import com.example.bookcatalog.data.BookRepository
 import com.example.bookcatalog.data.db.AppDatabase
+import com.example.bookcatalog.data.io.LibraryExporter
+import com.example.bookcatalog.data.io.LibraryImporter
 import com.example.bookcatalog.data.metadata.BookMetadataRepository
 import com.example.bookcatalog.data.metadata.BraveWebSearch
 import com.example.bookcatalog.data.metadata.GoogleBooksMetadataSource
@@ -24,7 +26,10 @@ import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import okhttp3.OkHttpClient
 import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
+import java.io.File
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 class BookCatalogApp : Application() {
     lateinit var container: AppContainer
@@ -45,7 +50,7 @@ class AppContainer(application: Application) {
         .addMigrations(AppDatabase.MIGRATION_1_2)
         .build()
 
-    val bookRepository = BookRepository(database.bookDao())
+    val bookRepository = BookRepository(database)
 
     private val httpClient = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
@@ -102,6 +107,14 @@ class AppContainer(application: Application) {
         coverStore = coverStore,
         subjectMapper = subjectMapper,
         descriptionWriter = descriptionWriter,
+    )
+
+    val libraryExporter = LibraryExporter(bookRepository, coverStore.coverDirectory)
+    val libraryImporter = LibraryImporter(
+        store = bookRepository,
+        coverDirectory = coverStore.coverDirectory,
+        stagingDirectory = File(application.cacheDir, "import-covers"),
+        fetchCover = { isbn13, url -> withContext(Dispatchers.IO) { coverStore.download(isbn13, url) } },
     )
 
     private fun String.ensureTrailingSlash(): String =

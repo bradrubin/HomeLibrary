@@ -12,6 +12,9 @@ interface BookDao {
     @Query("SELECT * FROM books ORDER BY title COLLATE NOCASE ASC")
     fun observeAll(): Flow<List<Book>>
 
+    @Query("SELECT * FROM books ORDER BY title COLLATE NOCASE ASC, id ASC")
+    suspend fun getAll(): List<Book>
+
     @Query("SELECT * FROM books WHERE id = :id")
     suspend fun getById(id: Long): Book?
 

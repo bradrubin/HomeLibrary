@@ -125,6 +125,7 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.play.services.code.scanner)
     implementation(libs.androidx.exifinterface)
+    implementation(libs.commons.csv)
 
     debugImplementation(libs.androidx.compose.ui.tooling)
     testImplementation(libs.junit)

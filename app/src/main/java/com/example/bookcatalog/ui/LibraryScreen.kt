@@ -57,15 +57,38 @@ fun LibraryScreen(
     onScanBook: () -> Unit,
     onLookupBook: () -> Unit,
     onEditBook: (Long) -> Unit,
+    onImportExport: () -> Unit,
 ) {
     val books by viewModel.books.collectAsState()
     val scope = rememberCoroutineScope()
     var bookToDelete by remember { mutableStateOf<Book?>(null) }
     var addMenuExpanded by remember { mutableStateOf(false) }
+    var overflowExpanded by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
-            TopAppBar(title = { Text("Book Catalog") })
+            TopAppBar(
+                title = { Text("Book Catalog") },
+                actions = {
+                    Box {
+                        IconButton(onClick = { overflowExpanded = true }) {
+                            Icon(Icons.Default.MoreVert, contentDescription = "More options")
+                        }
+                        DropdownMenu(
+                            expanded = overflowExpanded,
+                            onDismissRequest = { overflowExpanded = false },
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Import / Export") },
+                                onClick = {
+                                    overflowExpanded = false
+                                    onImportExport()
+                                },
+                            )
+                        }
+                    }
+                },
+            )
         },
         floatingActionButton = {
             Box {
