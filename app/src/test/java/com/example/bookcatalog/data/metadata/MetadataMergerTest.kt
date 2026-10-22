@@ -35,7 +35,7 @@ class MetadataMergerTest {
         assertEquals("Open Title", book.title)
         assertEquals("Doe, Jane", book.authors)
         assertEquals("Open publisher", book.publisher)
-        assertEquals("1999-05", book.publishedDate)
+        assertEquals("1999", book.publishedDate)
         assertEquals(240, book.pageCount)
         assertEquals("en", book.language)
         assertEquals("Google description", book.description)

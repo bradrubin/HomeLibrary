@@ -2,6 +2,7 @@ package com.example.bookcatalog.data.io
 
 import com.example.bookcatalog.data.db.Book
 import com.example.bookcatalog.domain.IsbnUtils
+import com.example.bookcatalog.domain.PublicationYear
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import java.io.BufferedInputStream
@@ -217,6 +218,14 @@ class LibraryImporter(
             IsbnValue.Blank, IsbnValue.Invalid -> null to null
             is IsbnValue.Valid -> isbn.isbn13 to IsbnUtils.isbn13To10(isbn.isbn13)
         }
+        fun year(): String? {
+            val raw = text(CsvColumn.PUBLISHED_DATE, base.publishedDate) ?: return null
+            return PublicationYear.from(raw) ?: run {
+                warnings += "Published date \"$raw\" has no year and was ignored."
+                null
+            }
+        }
+
         fun readStatus(): String? {
             if (CsvColumn.READ_STATUS !in values) return base.readStatus
             val raw = values[CsvColumn.READ_STATUS]?.trim()?.lowercase().orEmpty()
@@ -236,7 +245,7 @@ class LibraryImporter(
             subtitle = text(CsvColumn.SUBTITLE, base.subtitle),
             authors = text(CsvColumn.AUTHORS, base.authors),
             publisher = text(CsvColumn.PUBLISHER, base.publisher),
-            publishedDate = text(CsvColumn.PUBLISHED_DATE, base.publishedDate),
+            publishedDate = year(),
             pageCount = number(CsvColumn.PAGE_COUNT, "Page count", base.pageCount, 1..100_000),
             language = text(CsvColumn.LANGUAGE, base.language),
             subjects = text(CsvColumn.SUBJECTS, base.subjects),

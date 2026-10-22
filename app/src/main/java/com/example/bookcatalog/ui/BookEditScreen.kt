@@ -56,6 +56,7 @@ import com.example.bookcatalog.data.db.Book
 import com.example.bookcatalog.data.covers.CoverStore
 import com.example.bookcatalog.data.covers.CoverBoundaryDetector
 import com.example.bookcatalog.data.covers.NormalizedCrop
+import com.example.bookcatalog.domain.PublicationYear
 import com.example.bookcatalog.domain.TitleCase
 import com.squareup.moshi.JsonDataException
 import android.database.sqlite.SQLiteConstraintException
@@ -417,6 +418,8 @@ fun BookEditScreen(
                         val rating = draft.rating.toIntOrNull()
                         formError = when {
                             draft.title.isBlank() -> "Enter a title."
+                            draft.publishedDate.isNotBlank() && !PublicationYear.isValid(draft.publishedDate.trim()) ->
+                                "Publication year must be a four-digit year."
                             draft.pageCount.isNotBlank() && pages == null ->
                                 "Page count must be a whole number."
                             draft.rating.isNotBlank() && (rating == null || rating !in 0..5) ->
@@ -494,9 +497,10 @@ fun BookEditScreen(
             BookTextField("ISBN-10", draft.isbn10, { draft = draft.copy(isbn10 = it) })
             BookTextField("Publisher", draft.publisher, { draft = draft.copy(publisher = it) })
             BookTextField(
-                "Published date",
+                "Publication year",
                 draft.publishedDate,
                 { draft = draft.copy(publishedDate = it) },
+                keyboardType = KeyboardType.Number,
             )
             BookTextField(
                 "Page count",

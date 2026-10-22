@@ -2,6 +2,7 @@ package com.example.bookcatalog.data.metadata
 
 import com.example.bookcatalog.data.db.Book
 import com.example.bookcatalog.domain.IsbnUtils
+import com.example.bookcatalog.domain.PublicationYear
 import com.example.bookcatalog.domain.TitleCase
 
 object MetadataMerger {
@@ -23,8 +24,9 @@ object MetadataMerger {
             "Google".takeIf { google != null },
             "LibraryOfCongress".takeIf { loc != null },
         )
-        val publishedDate = listOfNotNull(open?.publishedDate, google?.publishedDate, loc?.publishedDate)
-            .reduceOrNull { best, candidate -> if (candidate.length > best.length) candidate else best }
+        // Only the year is kept, so Open Library is preferred as for the other bibliographic fields.
+        val publishedDate = listOf(open?.publishedDate, google?.publishedDate, loc?.publishedDate)
+            .firstNotNullOfOrNull(PublicationYear::from)
 
         fun List<String>?.joined(): String? = this?.takeIf(List<String>::isNotEmpty)?.joinToString("; ")
 

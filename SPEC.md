@@ -44,7 +44,7 @@ Personal use, single user, sideloaded. No Play Store release, no accounts, no cl
 | `subtitle` | String? | |
 | `authors` | String? | Multiple authors joined with `; ` |
 | `publisher` | String? | |
-| `publishedDate` | String? | Stored as text; sources return "1999", "1999-05", "May 1999", etc. Do not force to a date type. |
+| `publishedDate` | String? | Publication year only, as four digits (e.g., `1999`). Sources return "1999", "1999-05", "May 1999", etc.; keep just the year. |
 | `pageCount` | Int? | |
 | `language` | String? | |
 | `subjects` | String? | Joined with `; ` |
@@ -98,7 +98,7 @@ Query both sources in parallel (`async`), with a ~10 s timeout each. A failure i
 Field priority:
 - `title`, `subtitle`, `authors`, `publisher`, `subjects`: Open Library first, Google fallback
 - `pageCount`, `description`, `language`: Google first, Open Library fallback
-- `publishedDate`: whichever is more specific (longer string), tie → Open Library
+- `publishedDate`: the year from Open Library, then Google
 - Cover: Open Library large → Google (zoomed) → none
 
 Record which sources contributed in `dataSource`.
