@@ -9,40 +9,58 @@ object MetadataMerger {
         isbn13: String,
         openLibrary: BookMetadata?,
         googleBooks: BookMetadata?,
+        libraryOfCongress: BookMetadata? = null,
     ): Book? {
         val open = openLibrary?.takeIf(BookMetadata::hasDetails)
         val google = googleBooks?.takeIf(BookMetadata::hasDetails)
-        if (open == null && google == null) return null
+        // The catalog occasionally attaches an ISBN to an unrelated record, so it must agree on the title.
+        val loc = libraryOfCongress?.takeIf(BookMetadata::hasDetails)
+            ?.takeIf { catalog -> titlesAgree(catalog.title, open?.title ?: google?.title) }
+        if (open == null && google == null && loc == null) return null
 
         val sources = listOfNotNull(
             "OpenLibrary".takeIf { open != null },
             "Google".takeIf { google != null },
+            "LibraryOfCongress".takeIf { loc != null },
         )
-        val publishedDate = when {
-            open?.publishedDate == null -> google?.publishedDate
-            google?.publishedDate == null -> open.publishedDate
-            google.publishedDate.length > open.publishedDate.length -> google.publishedDate
-            else -> open.publishedDate
-        }
+        val publishedDate = listOfNotNull(open?.publishedDate, google?.publishedDate, loc?.publishedDate)
+            .reduceOrNull { best, candidate -> if (candidate.length > best.length) candidate else best }
+
+        fun List<String>?.joined(): String? = this?.takeIf(List<String>::isNotEmpty)?.joinToString("; ")
 
         return Book(
             isbn13 = isbn13,
             isbn10 = IsbnUtils.isbn13To10(isbn13),
-            title = TitleCase.format(open?.title ?: google?.title.orEmpty()),
-            subtitle = (open?.subtitle ?: google?.subtitle)?.let(TitleCase::format),
-            authors = open?.authors?.takeIf(List<String>::isNotEmpty)
-                ?.joinToString("; ")
-                ?: google?.authors?.takeIf(List<String>::isNotEmpty)?.joinToString("; "),
-            publisher = open?.publisher ?: google?.publisher,
+            title = TitleCase.format(open?.title ?: google?.title ?: loc?.title.orEmpty()),
+            subtitle = (open?.subtitle ?: google?.subtitle ?: loc?.subtitle)?.let(TitleCase::format),
+            authors = open?.authors.joined() ?: google?.authors.joined() ?: loc?.authors.joined(),
+            publisher = open?.publisher ?: google?.publisher ?: loc?.publisher,
             publishedDate = publishedDate,
-            pageCount = google?.pageCount ?: open?.pageCount,
-            language = google?.language ?: open?.language,
-            subjects = open?.subjects?.takeIf(List<String>::isNotEmpty)
-                ?.joinToString("; ")
-                ?: google?.subjects?.takeIf(List<String>::isNotEmpty)?.joinToString("; "),
-            description = google?.description ?: open?.description,
+            pageCount = google?.pageCount ?: open?.pageCount ?: loc?.pageCount,
+            language = google?.language ?: loc?.language ?: open?.language,
+            // Publisher-supplied BISAC headings beat cataloged subjects, which beat retail categories.
+            subjects = loc?.bisacSubjects.joined()
+                ?: loc?.subjects.joined()
+                ?: open?.subjects.joined()
+                ?: google?.subjects.joined(),
+            description = google?.description ?: loc?.description ?: open?.description,
             coverSourceUrl = open?.coverUrl ?: google?.coverUrl,
             dataSource = sources.joinToString("+"),
         )
     }
+
+    private fun titlesAgree(catalogTitle: String?, otherTitle: String?): Boolean {
+        if (catalogTitle == null || otherTitle == null) return true
+        val catalog = comparableTitle(catalogTitle)
+        val other = comparableTitle(otherTitle)
+        return catalog.isEmpty() || other.isEmpty() || catalog.startsWith(other) || other.startsWith(catalog)
+    }
+
+    private fun comparableTitle(title: String): String =
+        title.lowercase()
+            .replace(Regex("""[^\p{L}\p{N}]+"""), " ")
+            .trim()
+            .removePrefix("the ")
+            .removePrefix("a ")
+            .removePrefix("an ")
 }

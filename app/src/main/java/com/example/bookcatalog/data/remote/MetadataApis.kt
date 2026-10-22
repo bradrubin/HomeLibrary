@@ -1,6 +1,7 @@
 package com.example.bookcatalog.data.remote
 
 import com.squareup.moshi.Json
+import okhttp3.ResponseBody
 import retrofit2.http.GET
 import retrofit2.http.Headers
 import retrofit2.http.Query
@@ -21,6 +22,17 @@ interface GoogleBooksApi {
         @Query("q") query: String,
         @Query("key") apiKey: String?,
     ): GoogleBooksResponseDto
+}
+
+interface LibraryOfCongressApi {
+    @GET("LCDB")
+    suspend fun searchRetrieve(
+        @Query("query") query: String,
+        @Query("version") version: String = "1.1",
+        @Query("operation") operation: String = "searchRetrieve",
+        @Query("maximumRecords") maximumRecords: Int = 5,
+        @Query("recordSchema") recordSchema: String = "mods",
+    ): ResponseBody
 }
 
 data class OpenLibraryBookDto(

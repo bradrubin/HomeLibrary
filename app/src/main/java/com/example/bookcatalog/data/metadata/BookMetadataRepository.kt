@@ -43,16 +43,21 @@ class BookMetadataRepository(
     }
 
     suspend fun lookup(isbn13: String): MetadataLookupResult = supervisorScope {
-        val openLibrary = sources.first { it.name == "OpenLibrary" }
-        val googleBooks = sources.first { it.name == "Google" }
-        val openDeferred = async { fetchSafely(openLibrary, isbn13) }
-        val googleDeferred = async { fetchSafely(googleBooks, isbn13) }
-        val openResult = openDeferred.await()
-        val googleResult = googleDeferred.await()
-        val book = MetadataMerger.merge(isbn13, openResult.metadata, googleResult.metadata)
+        val results = sources
+            .map { source -> source.name to async { fetchSafely(source, isbn13) } }
+            .associate { (name, deferred) -> name to deferred.await() }
+        val openResult = results["OpenLibrary"]
+        val googleResult = results["Google"]
+        val locResult = results["LibraryOfCongress"]
+        val book = MetadataMerger.merge(
+            isbn13 = isbn13,
+            openLibrary = openResult?.metadata,
+            googleBooks = googleResult?.metadata,
+            libraryOfCongress = locResult?.metadata,
+        )
             ?: return@supervisorScope MetadataLookupResult(
                 book = emptyLookupBook(isbn13),
-                message = if (openResult.failed && googleResult.failed) {
+                message = if (results.values.all(SourceResult::failed)) {
                     "Couldn’t connect to the book lookup services. Check your internet connection and try again."
                 } else {
                     "No book details were found. You can enter them manually."
@@ -62,8 +67,8 @@ class BookMetadataRepository(
         var coverDownloadFailed = false
         var mappedBook = book
         val coverUrls = listOfNotNull(
-            openResult.metadata?.coverUrl,
-            googleResult.metadata?.coverUrl,
+            openResult?.metadata?.coverUrl,
+            googleResult?.metadata?.coverUrl,
         ).distinct()
         for (coverUrl in coverUrls) {
             try {
@@ -86,7 +91,10 @@ class BookMetadataRepository(
             }
         }
         var subjectMappingFailed = false
-        if (subjectMapper != null) {
+        val usedLibraryOfCongress = book.dataSource.orEmpty().split('+').contains("LibraryOfCongress")
+        val hasPublisherBisac = usedLibraryOfCongress &&
+            locResult?.metadata?.bisacSubjects.orEmpty().isNotEmpty()
+        if (subjectMapper != null && !hasPublisherBisac) {
             try {
                 val subjects = mapSubjectsToBisac(mappedBook)
                 if (subjects.isNullOrEmpty()) {

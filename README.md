@@ -13,8 +13,14 @@ To enable Google Books lookups, add an optional API key to the ignored
 GOOGLE_BOOKS_API_KEY=your_key
 ```
 
-Open Library lookups work without a key. The app queries both metadata sources
-in parallel and remains usable without network access for saved books.
+Open Library and Library of Congress lookups work without a key. The app queries
+all metadata sources in parallel and remains usable without network access for
+saved books. Any one source can fail without blocking the lookup. Library of
+Congress records supply cataloged subjects, summaries, and, when the publisher
+provided them, BISAC headings; those headings are used directly instead of
+HomeChat mapping. A Library of Congress record is ignored when its title
+disagrees with Open Library or Google. Its catalog endpoint is HTTP-only, so the
+app allows cleartext traffic to `lx2.loc.gov`.
 Titles and subtitles use Chicago-style title capitalization: principal words
 are capitalized, short articles/conjunctions/prepositions are lowercased except
 at the beginning/end and after a colon, while mixed-case names and known

@@ -77,4 +77,79 @@ class MetadataMergerTest {
         assertEquals("The Lord of the Rings", book.title)
         assertEquals("The Fellowship of the Ring", book.subtitle)
     }
+
+    @Test
+    fun prefersLibraryOfCongressBisacSubjects() {
+        val book = MetadataMerger.merge(
+            isbn13 = "9781250301697",
+            openLibrary = BookMetadata(title = "The Silent Patient", subjects = listOf("Open subject")),
+            googleBooks = BookMetadata(subjects = listOf("Fiction")),
+            libraryOfCongress = BookMetadata(
+                title = "The silent patient",
+                subjects = listOf("Marriage -- Fiction"),
+                bisacSubjects = listOf("FICTION / Thrillers / Psychological", "FICTION / Thrillers / Suspense"),
+            ),
+        )
+
+        requireNotNull(book)
+        assertEquals("The Silent Patient", book.title)
+        assertEquals("FICTION / Thrillers / Psychological; FICTION / Thrillers / Suspense", book.subjects)
+        assertEquals("OpenLibrary+Google+LibraryOfCongress", book.dataSource)
+    }
+
+    @Test
+    fun fillsGapsFromLibraryOfCongressWhenGoogleIsMissing() {
+        val book = MetadataMerger.merge(
+            isbn13 = "9781250301697",
+            openLibrary = BookMetadata(title = "Silent patient: a novel", subjects = listOf("Open subject")),
+            googleBooks = null,
+            libraryOfCongress = BookMetadata(
+                title = "The silent patient",
+                authors = listOf("Alex Michaelides"),
+                pageCount = 325,
+                language = "en",
+                subjects = listOf("Marriage -- Fiction"),
+                description = "Catalog summary",
+            ),
+        )
+
+        requireNotNull(book)
+        assertEquals("Alex Michaelides", book.authors)
+        assertEquals(325, book.pageCount)
+        assertEquals("en", book.language)
+        assertEquals("Marriage -- Fiction", book.subjects)
+        assertEquals("Catalog summary", book.description)
+        assertEquals("OpenLibrary+LibraryOfCongress", book.dataSource)
+    }
+
+    @Test
+    fun ignoresLibraryOfCongressRecordWithDifferentTitle() {
+        val book = MetadataMerger.merge(
+            isbn13 = "9780061120084",
+            openLibrary = BookMetadata(title = "To Kill a Mockingbird"),
+            googleBooks = null,
+            libraryOfCongress = BookMetadata(
+                title = "Dhiki ya Mtule",
+                bisacSubjects = listOf("FICTION / African American & Black / General"),
+            ),
+        )
+
+        requireNotNull(book)
+        assertNull(book.subjects)
+        assertEquals("OpenLibrary", book.dataSource)
+    }
+
+    @Test
+    fun usesLibraryOfCongressAlone() {
+        val book = MetadataMerger.merge(
+            isbn13 = "9781250301697",
+            openLibrary = null,
+            googleBooks = null,
+            libraryOfCongress = BookMetadata(title = "The silent patient"),
+        )
+
+        requireNotNull(book)
+        assertEquals("The Silent Patient", book.title)
+        assertEquals("LibraryOfCongress", book.dataSource)
+    }
 }

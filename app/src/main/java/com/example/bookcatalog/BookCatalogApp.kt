@@ -9,10 +9,12 @@ import com.example.bookcatalog.data.BookRepository
 import com.example.bookcatalog.data.db.AppDatabase
 import com.example.bookcatalog.data.metadata.BookMetadataRepository
 import com.example.bookcatalog.data.metadata.GoogleBooksMetadataSource
+import com.example.bookcatalog.data.metadata.LibraryOfCongressMetadataSource
 import com.example.bookcatalog.data.metadata.HomeChatApi
 import com.example.bookcatalog.data.metadata.HomeChatBisacSubjectMapper
 import com.example.bookcatalog.data.metadata.OpenLibraryMetadataSource
 import com.example.bookcatalog.data.remote.GoogleBooksApi
+import com.example.bookcatalog.data.remote.LibraryOfCongressApi
 import com.example.bookcatalog.data.remote.OpenLibraryApi
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
@@ -73,6 +75,10 @@ class AppContainer(application: Application) {
             GoogleBooksMetadataSource(
                 retrofit("https://www.googleapis.com/").create(GoogleBooksApi::class.java),
                 BuildConfig.GOOGLE_BOOKS_API_KEY,
+            ),
+            // The catalog's SRU endpoint is only served over HTTP; see network_security_config.
+            LibraryOfCongressMetadataSource(
+                retrofit("http://lx2.loc.gov:210/").create(LibraryOfCongressApi::class.java),
             ),
         ),
         coverStore = coverStore,

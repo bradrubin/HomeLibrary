@@ -26,7 +26,10 @@ require(homeChatBaseUrl.isBlank() || homeChatHost != null) {
     "HOMECHAT_LLM_BASE_URL must be an absolute URL with a host."
 }
 val generatedNetworkSecurityResources = layout.buildDirectory.dir("generated/res/networkSecurity/main")
+// The Library of Congress SRU catalog endpoint is only available over HTTP.
+val libraryOfCongressCatalogHost = "lx2.loc.gov"
 val generateNetworkSecurityConfig = tasks.register("generateNetworkSecurityConfig") {
+    inputs.property("libraryOfCongressCatalogHost", libraryOfCongressCatalogHost)
     inputs.property("homeChatHost", homeChatHost.orEmpty())
     inputs.property("homeChatUsesCleartext", homeChatUri?.scheme == "http")
     val outputFile = generatedNetworkSecurityResources.map {
@@ -34,6 +37,11 @@ val generateNetworkSecurityConfig = tasks.register("generateNetworkSecurityConfi
     }
     outputs.file(outputFile)
     doLast {
+        val catalogPolicy = """
+            <domain-config cleartextTrafficPermitted="true">
+                <domain includeSubdomains="false">$libraryOfCongressCatalogHost</domain>
+            </domain-config>
+        """.trimIndent()
         val hostPolicy = if (homeChatUri?.scheme == "http") {
             """
             <domain-config cleartextTrafficPermitted="true">
@@ -49,6 +57,7 @@ val generateNetworkSecurityConfig = tasks.register("generateNetworkSecurityConfi
                 """
                 <network-security-config>
                     <base-config cleartextTrafficPermitted="false" />
+                    $catalogPolicy
                     $hostPolicy
                 </network-security-config>
                 """.trimIndent(),

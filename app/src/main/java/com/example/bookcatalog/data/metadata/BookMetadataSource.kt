@@ -14,6 +14,7 @@ data class BookMetadata(
     val pageCount: Int? = null,
     val language: String? = null,
     val subjects: List<String> = emptyList(),
+    val bisacSubjects: List<String> = emptyList(),
     val description: String? = null,
     val coverUrl: String? = null,
 ) {
@@ -27,6 +28,7 @@ data class BookMetadata(
             pageCount?.toString(),
             language,
             subjects.takeIf(List<String>::isNotEmpty)?.joinToString(),
+            bisacSubjects.takeIf(List<String>::isNotEmpty)?.joinToString(),
             description,
             coverUrl,
         ).any { !it.isNullOrBlank() }
