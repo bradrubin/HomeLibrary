@@ -214,6 +214,9 @@ fun BookEditScreen(
     var subjectMappingMessage by rememberSaveable(bookId) { mutableStateOf<String?>(null) }
     var subjectMappingFailed by rememberSaveable(bookId) { mutableStateOf(false) }
     var isMappingSubjects by rememberSaveable(bookId) { mutableStateOf(false) }
+    var descriptionMessage by rememberSaveable(bookId) { mutableStateOf<String?>(null) }
+    var descriptionFailed by rememberSaveable(bookId) { mutableStateOf(false) }
+    var isWritingDescription by rememberSaveable(bookId) { mutableStateOf(false) }
     var captureFile by remember { mutableStateOf<File?>(null) }
     var captureUri by remember { mutableStateOf<android.net.Uri?>(null) }
     var cropBitmap by remember { mutableStateOf<Bitmap?>(null) }
@@ -567,6 +570,72 @@ fun BookEditScreen(
                 { draft = draft.copy(description = it) },
                 singleLine = false,
             )
+            Button(
+                onClick = {
+                    scope.launch {
+                        isWritingDescription = true
+                        descriptionMessage = null
+                        descriptionFailed = false
+                        val hadDescription = draft.description.isNotBlank()
+                        try {
+                            val description = viewModel.writeDescription(draft.toBook(originalBook))
+                            if (description == null) {
+                                descriptionMessage =
+                                    "The local model doesn't know this book; the description was left unchanged."
+                                descriptionFailed = true
+                            } else {
+                                draft = draft.copy(description = description)
+                                descriptionMessage =
+                                    if (hadDescription) "Description summarized." else "Description written."
+                            }
+                        } catch (exception: CancellationException) {
+                            throw exception
+                        } catch (exception: IOException) {
+                            descriptionMessage =
+                                "Could not write a description. Check the local model connection and try again."
+                            descriptionFailed = true
+                        } catch (exception: HttpException) {
+                            descriptionMessage =
+                                "Could not write a description. Check the local model connection and try again."
+                            descriptionFailed = true
+                        } catch (exception: JsonDataException) {
+                            descriptionMessage =
+                                "The local model returned an invalid response; the description was left unchanged."
+                            descriptionFailed = true
+                        } catch (exception: IllegalArgumentException) {
+                            descriptionMessage =
+                                "The local model returned an invalid description; the description was left unchanged."
+                            descriptionFailed = true
+                        } catch (exception: IllegalStateException) {
+                            descriptionMessage = exception.message
+                                ?: "Description writing is not configured."
+                            descriptionFailed = true
+                        } finally {
+                            isWritingDescription = false
+                        }
+                    }
+                },
+                enabled = !isWritingDescription,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(
+                    when {
+                        isWritingDescription -> "Writing description…"
+                        draft.description.isBlank() -> "Write description"
+                        else -> "Summarize description"
+                    },
+                )
+            }
+            descriptionMessage?.let {
+                Text(
+                    it,
+                    color = if (descriptionFailed) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                )
+            }
             BookTextField("Location", draft.location, { draft = draft.copy(location = it) })
             BookTextField("Notes", draft.notes, { draft = draft.copy(notes = it) }, singleLine = false)
             BookTextField(

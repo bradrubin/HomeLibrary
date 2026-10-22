@@ -17,6 +17,7 @@ val googleBooksApiKey = localProperties.getProperty("GOOGLE_BOOKS_API_KEY", "")
 val homeChatBaseUrl = localProperties.getProperty("HOMECHAT_LLM_BASE_URL", "").trim()
 val homeChatModel = localProperties.getProperty("HOMECHAT_LLM_MODEL", "").trim()
 val homeChatApiKey = localProperties.getProperty("HOMECHAT_LLM_API_KEY", "")
+val braveSearchApiKey = localProperties.getProperty("BRAVE_SEARCH_API_KEY", "").trim()
 
 fun String.asBuildConfigString(): String = replace("\\", "\\\\").replace("\"", "\\\"")
 
@@ -86,6 +87,7 @@ android {
         buildConfigField("String", "HOMECHAT_LLM_BASE_URL", "\"${homeChatBaseUrl.asBuildConfigString()}\"")
         buildConfigField("String", "HOMECHAT_LLM_MODEL", "\"${homeChatModel.asBuildConfigString()}\"")
         buildConfigField("String", "HOMECHAT_LLM_API_KEY", "\"${homeChatApiKey.asBuildConfigString()}\"")
+        buildConfigField("String", "BRAVE_SEARCH_API_KEY", "\"${braveSearchApiKey.asBuildConfigString()}\"")
     }
 
     buildFeatures {

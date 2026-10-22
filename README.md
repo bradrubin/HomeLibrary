@@ -42,5 +42,21 @@ official slash-separated qualifiers. If mapping fails, source subjects are kept
 and the edit screen shows a warning. The app allows cleartext traffic only to
 the configured LLM host when its URL uses HTTP.
 Existing books can be remapped from the edit screen with **Map subjects to BISAC**.
+HomeChat also rewrites each looked-up description as 3–4 sentences about the
+book's content, dropping marketing such as bestseller lists and review quotes.
+When no source has a description, the model is told to search the web unless
+the book is a famous classic it knows with certainty, to write only from what
+it knows or finds, and to leave the description empty if neither identifies the
+book. It sends the ISBN, title, subtitle, authors, publication date, and source
+description. Web search uses the Brave Search API, enabled by adding a key to
+`local.properties`:
+
+```properties
+BRAVE_SEARCH_API_KEY=your-brave-search-key
+```
+
+The key is built into the app, and searches go from the phone straight to
+Brave. Without a key, the model writes only from its own knowledge. Existing books can be updated from the edit screen with
+**Summarize description** (or **Write description** when it is empty).
 When taking a cover photo, the app detects a likely book-cover rectangle on-device.
 The crop remains adjustable, and low-confidence detection falls back to the manual frame.

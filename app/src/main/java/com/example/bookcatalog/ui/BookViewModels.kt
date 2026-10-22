@@ -34,6 +34,9 @@ class BookEditViewModel(
     suspend fun mapSubjectsToBisac(book: Book): List<String> =
         metadataRepository.mapSubjectsToBisac(book)
 
+    suspend fun writeDescription(book: Book): String? =
+        metadataRepository.writeDescription(book)
+
     suspend fun delete(book: Book) {
         repository.delete(book)
     }

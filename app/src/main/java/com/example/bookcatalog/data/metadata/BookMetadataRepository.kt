@@ -6,9 +6,11 @@ import com.example.bookcatalog.domain.IsbnUtils
 import com.squareup.moshi.JsonDataException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import retrofit2.HttpException
 import java.io.IOException
@@ -17,7 +19,35 @@ class BookMetadataRepository(
     private val sources: List<BookMetadataSource>,
     private val coverStore: CoverStore,
     private val subjectMapper: HomeChatBisacSubjectMapper? = null,
+    private val descriptionWriter: HomeChatDescriptionWriter? = null,
 ) {
+    /** Returns null when there is no description to summarize and the model doesn't know the book. */
+    suspend fun writeDescription(book: com.example.bookcatalog.data.db.Book): String? {
+        val writer = descriptionWriter
+            ?: throw IllegalStateException("Description writing is not configured.")
+        return try {
+            // withTimeout, not withTimeoutOrNull, since null already means "no description".
+            withTimeout(DESCRIPTION_TIMEOUT_MS) { writer.write(book) }
+        } catch (exception: TimeoutCancellationException) {
+            Log.w(TAG, "Description writing timed out for ${book.isbn13}", exception)
+            throw IOException("Description writing timed out.", exception)
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: IOException) {
+            Log.w(TAG, "Could not write description for ${book.isbn13}", exception)
+            throw exception
+        } catch (exception: HttpException) {
+            Log.w(TAG, "Could not write description for ${book.isbn13}", exception)
+            throw exception
+        } catch (exception: JsonDataException) {
+            Log.w(TAG, "Could not parse description response for ${book.isbn13}", exception)
+            throw exception
+        } catch (exception: IllegalArgumentException) {
+            Log.w(TAG, "Local model returned an invalid description for ${book.isbn13}", exception)
+            throw exception
+        }
+    }
+
     suspend fun mapSubjectsToBisac(book: com.example.bookcatalog.data.db.Book): List<String> {
         val mapper = subjectMapper
             ?: throw IllegalStateException("BISAC subject mapping is not configured.")
@@ -102,8 +132,7 @@ class BookMetadataRepository(
                 } else {
                     mappedBook = mappedBook.copy(
                         subjects = subjects.joinToString("; "),
-                        dataSource = listOfNotNull(mappedBook.dataSource, "HomeChat")
-                            .joinToString("+"),
+                        dataSource = mappedBook.dataSource.withHomeChat(),
                     )
                 }
             } catch (exception: CancellationException) {
@@ -122,6 +151,28 @@ class BookMetadataRepository(
                 subjectMappingFailed = true
             }
         }
+        // Runs after subject mapping, so subjects come from the source description.
+        var descriptionFailed = false
+        if (descriptionWriter != null) {
+            try {
+                writeDescription(mappedBook)?.let { description ->
+                    mappedBook = mappedBook.copy(
+                        description = description,
+                        dataSource = mappedBook.dataSource.withHomeChat(),
+                    )
+                }
+            } catch (exception: CancellationException) {
+                throw exception
+            } catch (exception: IOException) {
+                descriptionFailed = true
+            } catch (exception: HttpException) {
+                descriptionFailed = true
+            } catch (exception: JsonDataException) {
+                descriptionFailed = true
+            } catch (exception: IllegalArgumentException) {
+                descriptionFailed = true
+            }
+        }
         MetadataLookupResult(
             book = mappedBook,
             warning = listOfNotNull(
@@ -129,6 +180,11 @@ class BookMetadataRepository(
                     .takeIf { coverDownloadFailed },
                 "Could not map subjects to BISAC; source subjects are shown instead."
                     .takeIf { subjectMappingFailed },
+                when {
+                    !descriptionFailed -> null
+                    mappedBook.description.isNullOrBlank() -> "Could not write a description."
+                    else -> "Could not shorten the description; the source description is shown instead."
+                },
             ).joinToString(" ").ifEmpty { null },
         )
     }
@@ -169,6 +225,9 @@ class BookMetadataRepository(
         Log.w(TAG, "${source.name} lookup failed for $isbn13", exception)
     }
 
+    private fun String?.withHomeChat(): String =
+        if (orEmpty().split('+').contains("HomeChat")) this.orEmpty() else listOfNotNull(this, "HomeChat").joinToString("+")
+
     private fun emptyLookupBook(isbn13: String) =
         com.example.bookcatalog.data.db.Book(
             isbn13 = isbn13,
@@ -185,5 +244,7 @@ class BookMetadataRepository(
         private const val TAG = "BookMetadata"
         private const val SOURCE_TIMEOUT_MS = 10_000L
         private const val SUBJECT_MAPPING_TIMEOUT_MS = 25_000L
+        // Up to three model calls and two web searches.
+        private const val DESCRIPTION_TIMEOUT_MS = 60_000L
     }
 }

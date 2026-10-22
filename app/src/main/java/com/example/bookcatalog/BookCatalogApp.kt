@@ -8,11 +8,14 @@ import com.example.bookcatalog.data.covers.CoverStore
 import com.example.bookcatalog.data.BookRepository
 import com.example.bookcatalog.data.db.AppDatabase
 import com.example.bookcatalog.data.metadata.BookMetadataRepository
+import com.example.bookcatalog.data.metadata.BraveWebSearch
 import com.example.bookcatalog.data.metadata.GoogleBooksMetadataSource
 import com.example.bookcatalog.data.metadata.LibraryOfCongressMetadataSource
 import com.example.bookcatalog.data.metadata.HomeChatApi
 import com.example.bookcatalog.data.metadata.HomeChatBisacSubjectMapper
+import com.example.bookcatalog.data.metadata.HomeChatDescriptionWriter
 import com.example.bookcatalog.data.metadata.OpenLibraryMetadataSource
+import com.example.bookcatalog.data.remote.BraveSearchApi
 import com.example.bookcatalog.data.remote.GoogleBooksApi
 import com.example.bookcatalog.data.remote.LibraryOfCongressApi
 import com.example.bookcatalog.data.remote.OpenLibraryApi
@@ -66,7 +69,22 @@ class AppContainer(application: Application) {
 
     val coverStore = CoverStore(application.filesDir, httpClient)
     private val localLlmBaseUrl = BuildConfig.HOMECHAT_LLM_BASE_URL
-    private val subjectMapper = createSubjectMapper()
+    private val homeChatApi = createHomeChatApi()
+    private val subjectMapper = homeChatApi?.let {
+        HomeChatBisacSubjectMapper(it, BuildConfig.HOMECHAT_LLM_MODEL, BuildConfig.HOMECHAT_LLM_API_KEY, moshi)
+    }
+    private val webSearch = BuildConfig.BRAVE_SEARCH_API_KEY.takeIf(String::isNotBlank)?.let { key ->
+        BraveWebSearch(retrofit("https://api.search.brave.com/").create(BraveSearchApi::class.java), key)
+    }
+    private val descriptionWriter = homeChatApi?.let {
+        HomeChatDescriptionWriter(
+            it,
+            BuildConfig.HOMECHAT_LLM_MODEL,
+            BuildConfig.HOMECHAT_LLM_API_KEY,
+            moshi,
+            webSearch,
+        )
+    }
     val metadataRepository = BookMetadataRepository(
         sources = listOf(
             OpenLibraryMetadataSource(
@@ -83,24 +101,20 @@ class AppContainer(application: Application) {
         ),
         coverStore = coverStore,
         subjectMapper = subjectMapper,
+        descriptionWriter = descriptionWriter,
     )
 
     private fun String.ensureTrailingSlash(): String =
         if (endsWith('/')) this else "$this/"
 
-    private fun createSubjectMapper(): HomeChatBisacSubjectMapper? {
+    private fun createHomeChatApi(): HomeChatApi? {
         if (localLlmBaseUrl.isBlank()) return null
         if (BuildConfig.HOMECHAT_LLM_API_KEY.isBlank() || BuildConfig.HOMECHAT_LLM_MODEL.isBlank()) {
-            Log.w(TAG, "HomeChat BISAC mapping is disabled: configure its model and API key.")
+            Log.w(TAG, "HomeChat BISAC mapping and descriptions are disabled: configure its model and API key.")
             return null
         }
-        return HomeChatBisacSubjectMapper(
-            api = retrofit(localLlmBaseUrl.ensureTrailingSlash(), localLlmHttpClient)
-                .create(HomeChatApi::class.java),
-            model = BuildConfig.HOMECHAT_LLM_MODEL,
-            apiKey = BuildConfig.HOMECHAT_LLM_API_KEY,
-            moshi = moshi,
-        )
+        return retrofit(localLlmBaseUrl.ensureTrailingSlash(), localLlmHttpClient)
+            .create(HomeChatApi::class.java)
     }
 
     private companion object {

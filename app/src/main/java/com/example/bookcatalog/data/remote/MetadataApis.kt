@@ -3,6 +3,7 @@ package com.example.bookcatalog.data.remote
 import com.squareup.moshi.Json
 import okhttp3.ResponseBody
 import retrofit2.http.GET
+import retrofit2.http.Header
 import retrofit2.http.Headers
 import retrofit2.http.Query
 
@@ -23,6 +24,29 @@ interface GoogleBooksApi {
         @Query("key") apiKey: String?,
     ): GoogleBooksResponseDto
 }
+
+interface BraveSearchApi {
+    @Headers("Accept: application/json")
+    @GET("res/v1/web/search")
+    suspend fun search(
+        @Header("X-Subscription-Token") apiKey: String,
+        @Query("q") query: String,
+        @Query("count") count: Int,
+    ): BraveSearchResponseDto
+}
+
+data class BraveSearchResponseDto(
+    val web: BraveWebResultsDto? = null,
+)
+
+data class BraveWebResultsDto(
+    val results: List<BraveWebResultDto> = emptyList(),
+)
+
+data class BraveWebResultDto(
+    val title: String? = null,
+    val description: String? = null,
+)
 
 interface LibraryOfCongressApi {
     @GET("LCDB")

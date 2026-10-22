@@ -105,12 +105,38 @@ data class ChatCompletionRequest(
     val messages: List<ChatMessage>,
     val temperature: Double = 0.1,
     @Json(name = "max_tokens") val maxTokens: Int = 256,
-    @Json(name = "response_format") val responseFormat: ChatResponseFormat,
+    // Null when tools are offered, since a forced JSON format would keep the model from calling them.
+    @Json(name = "response_format") val responseFormat: ChatResponseFormat? = null,
+    val tools: List<ChatTool>? = null,
 )
 
 data class ChatMessage(
     val role: String,
     val content: String,
+    @Json(name = "tool_calls") val toolCalls: List<ChatToolCall>? = null,
+    @Json(name = "tool_call_id") val toolCallId: String? = null,
+)
+
+data class ChatTool(
+    val type: String = "function",
+    val function: ChatToolFunction,
+)
+
+data class ChatToolFunction(
+    val name: String,
+    val description: String,
+    val parameters: Map<String, Any>,
+)
+
+data class ChatToolCall(
+    val id: String,
+    val type: String = "function",
+    val function: ChatToolCallFunction,
+)
+
+data class ChatToolCallFunction(
+    val name: String,
+    val arguments: String,
 )
 
 data class ChatResponseFormat(
@@ -127,6 +153,7 @@ data class ChatCompletionChoice(
 
 data class ChatCompletionMessage(
     val content: String? = null,
+    @Json(name = "tool_calls") val toolCalls: List<ChatToolCall>? = null,
 )
 
 data class BisacSubjectResponse(
