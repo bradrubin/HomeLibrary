@@ -21,6 +21,10 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -571,11 +575,7 @@ fun BookEditScreen(
                 { draft = draft.copy(rating = it) },
                 keyboardType = KeyboardType.Number,
             )
-            BookTextField(
-                "Read status (unread, reading, read)",
-                draft.readStatus,
-                { draft = draft.copy(readStatus = it) },
-            )
+            ReadStatusField(draft.readStatus) { draft = draft.copy(readStatus = it) }
         }
     }
 
@@ -646,6 +646,41 @@ private fun BookTextField(
         minLines = if (singleLine) 1 else 3,
     )
 }
+
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+private fun ReadStatusField(value: String, onValueChange: (String) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = it },
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        OutlinedTextField(
+            value = value.replaceFirstChar(Char::uppercase),
+            onValueChange = {},
+            readOnly = true,
+            label = { Text("Read status") },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            modifier = Modifier
+                .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                .fillMaxWidth(),
+        )
+        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            READ_STATUSES.forEach { status ->
+                DropdownMenuItem(
+                    text = { Text(status.replaceFirstChar(Char::uppercase)) },
+                    onClick = {
+                        onValueChange(status)
+                        expanded = false
+                    },
+                )
+            }
+        }
+    }
+}
+
+private val READ_STATUSES = listOf("unread", "reading", "read")
 
 private fun String.optional(): String? = trim().takeIf(String::isNotBlank)
 
