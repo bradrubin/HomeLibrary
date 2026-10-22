@@ -1,6 +1,7 @@
 package com.example.bookcatalog.ui
 
 import android.graphics.Bitmap
+import android.os.Parcelable
 import android.content.ActivityNotFoundException
 import android.util.Log
 import androidx.compose.foundation.layout.Arrangement
@@ -41,10 +42,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.saveable.Saver
-import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -56,21 +56,21 @@ import com.example.bookcatalog.data.db.Book
 import com.example.bookcatalog.data.covers.CoverStore
 import com.example.bookcatalog.data.covers.CoverBoundaryDetector
 import com.example.bookcatalog.data.covers.NormalizedCrop
+import com.example.bookcatalog.data.metadata.ModelException
 import com.example.bookcatalog.domain.BookFormat
 import com.example.bookcatalog.domain.PublicationYear
+import com.example.bookcatalog.domain.ReadStatus
 import com.example.bookcatalog.domain.TitleCase
-import com.squareup.moshi.JsonDataException
-import android.database.sqlite.SQLiteConstraintException
 import coil.compose.AsyncImage
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import retrofit2.HttpException
+import kotlinx.parcelize.Parcelize
 import java.io.File
 import java.io.IOException
 import java.util.UUID
 
+@Parcelize
 private data class BookDraft(
     val isbn13: String = "",
     val isbn10: String = "",
@@ -87,12 +87,12 @@ private data class BookDraft(
     val location: String = "",
     val notes: String = "",
     val rating: String = "",
-    val readStatus: String = "unread",
+    val readStatus: String = ReadStatus.UNREAD,
     val coverFile: String = "",
     val coverSourceUrl: String = "",
     val dataSource: String = "",
     val dateAdded: Long = 0L,
-) {
+) : Parcelable {
     fun toBook(existingBook: Book?): Book = Book(
         id = existingBook?.id ?: 0L,
         isbn13 = isbn13.normalizedIsbn().takeIf(String::isNotBlank),
@@ -137,7 +137,7 @@ private data class BookDraft(
             location = book.location.orEmpty(),
             notes = book.notes.orEmpty(),
             rating = book.rating?.toString().orEmpty(),
-            readStatus = book.readStatus ?: "unread",
+            readStatus = book.readStatus ?: ReadStatus.UNREAD,
             coverFile = book.coverFile.orEmpty(),
             coverSourceUrl = book.coverSourceUrl.orEmpty(),
             dataSource = book.dataSource.orEmpty(),
@@ -146,56 +146,11 @@ private data class BookDraft(
     }
 }
 
-private val BookDraftSaver: Saver<BookDraft, Any> = listSaver<BookDraft, String>(
-    save = {
-        listOf(
-            it.isbn13,
-            it.isbn10,
-            it.title,
-            it.subtitle,
-            it.authors,
-            it.publisher,
-            it.publishedDate,
-            it.pageCount,
-            it.language,
-            it.subjects,
-            it.description,
-            it.location,
-            it.notes,
-            it.rating,
-            it.readStatus,
-            it.coverFile,
-            it.coverSourceUrl,
-            it.dataSource,
-            it.dateAdded.toString(),
-            it.format,
-        )
-    },
-    restore = { values ->
-        BookDraft(
-            isbn13 = values.getOrNull(0).orEmpty(),
-            isbn10 = values.getOrNull(1).orEmpty(),
-            title = values.getOrNull(2).orEmpty(),
-            subtitle = values.getOrNull(3).orEmpty(),
-            authors = values.getOrNull(4).orEmpty(),
-            publisher = values.getOrNull(5).orEmpty(),
-            publishedDate = values.getOrNull(6).orEmpty(),
-            pageCount = values.getOrNull(7).orEmpty(),
-            language = values.getOrNull(8).orEmpty(),
-            subjects = values.getOrNull(9).orEmpty(),
-            description = values.getOrNull(10).orEmpty(),
-            location = values.getOrNull(11).orEmpty(),
-            notes = values.getOrNull(12).orEmpty(),
-            rating = values.getOrNull(13).orEmpty(),
-            readStatus = values.getOrNull(14) ?: "unread",
-            coverFile = values.getOrNull(15).orEmpty(),
-            coverSourceUrl = values.getOrNull(16).orEmpty(),
-            dataSource = values.getOrNull(17).orEmpty(),
-            dateAdded = values.getOrNull(18)?.toLongOrNull() ?: 0L,
-            format = values.getOrNull(19).orEmpty(),
-        )
-    },
-)
+/** The outcome of a HomeChat button, shown under it. */
+@Parcelize
+private data class ModelStatus(val text: String, val isError: Boolean) : Parcelable
+
+private enum class ModelTask { SUBJECTS, DESCRIPTION }
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
@@ -205,12 +160,12 @@ fun BookEditScreen(
     initialBook: Book? = null,
     lookupMessage: String? = null,
     lookupWarning: String? = null,
-    coverDirectory: File? = null,
-    coverStore: CoverStore? = null,
+    coverDirectory: File,
+    coverStore: CoverStore,
     onDone: () -> Unit,
     onSaved: () -> Unit = onDone,
 ) {
-    var draft by rememberSaveable(bookId, stateSaver = BookDraftSaver) {
+    var draft by rememberSaveable(bookId) {
         mutableStateOf(initialBook?.let(BookDraft::from) ?: BookDraft())
     }
     var originalBook by remember(bookId, initialBook) { mutableStateOf(initialBook) }
@@ -218,17 +173,19 @@ fun BookEditScreen(
     var showDeleteConfirmation by remember { mutableStateOf(false) }
     var formError by rememberSaveable(bookId) { mutableStateOf<String?>(null) }
     var coverError by rememberSaveable(bookId) { mutableStateOf<String?>(null) }
-    var subjectMappingMessage by rememberSaveable(bookId) { mutableStateOf<String?>(null) }
-    var subjectMappingFailed by rememberSaveable(bookId) { mutableStateOf(false) }
-    var isMappingSubjects by rememberSaveable(bookId) { mutableStateOf(false) }
-    var descriptionMessage by rememberSaveable(bookId) { mutableStateOf<String?>(null) }
-    var descriptionFailed by rememberSaveable(bookId) { mutableStateOf(false) }
-    var isWritingDescription by rememberSaveable(bookId) { mutableStateOf(false) }
-    var captureFile by remember { mutableStateOf<File?>(null) }
-    var captureUri by remember { mutableStateOf<android.net.Uri?>(null) }
+    var subjectStatus by rememberSaveable(bookId) { mutableStateOf<ModelStatus?>(null) }
+    var descriptionStatus by rememberSaveable(bookId) { mutableStateOf<ModelStatus?>(null) }
+    // Not saved: the request is cancelled if the screen is recreated, so it must not stay busy.
+    var runningTask by remember { mutableStateOf<ModelTask?>(null) }
+    // Saved, so a photo survives the screen being recreated while the camera or cropper is open.
+    var captureFile by rememberSaveable(stateSaver = FileSaver) { mutableStateOf<File?>(null) }
+    var cropping by rememberSaveable { mutableStateOf(false) }
+    var detectedCrop by rememberSaveable { mutableStateOf<NormalizedCrop?>(null) }
+    var cropRotation by rememberSaveable { mutableStateOf(0f) }
     var cropBitmap by remember { mutableStateOf<Bitmap?>(null) }
-    var detectedCrop by remember { mutableStateOf<NormalizedCrop?>(null) }
-    var cropRotation by remember { mutableStateOf(0f) }
+    // Kept from the first composition, since the lookup that produced them isn't saved.
+    val lookupNotice by rememberSaveable(bookId) { mutableStateOf(lookupMessage) }
+    val lookupProblem by rememberSaveable(bookId) { mutableStateOf(lookupWarning) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val cameraLauncher = rememberLauncherForActivityResult(
@@ -238,25 +195,18 @@ fun BookEditScreen(
         if (captured && source != null) {
             scope.launch {
                 try {
-                    val store = requireNotNull(coverStore)
-                    val photo = withContext(Dispatchers.IO) {
-                        store.decodeForEditing(source)
-                    }
+                    val photo = withContext(Dispatchers.IO) { coverStore.decodeForEditing(source) }
                     val detected = withContext(Dispatchers.Default) {
                         CoverBoundaryDetector.detect(photo)
                     }
                     val rotation = detected?.rotationDegrees ?: 0f
                     cropBitmap = withContext(Dispatchers.Default) {
-                        store.rotate(photo, rotation).also { if (it !== photo) photo.recycle() }
+                        coverStore.rotate(photo, rotation).also { if (it !== photo) photo.recycle() }
                     }
                     detectedCrop = detected?.crop
                     cropRotation = rotation
+                    cropping = true
                 } catch (exception: IOException) {
-                    Log.e(TAG, "Could not load captured cover photo", exception)
-                    coverError = "The photo couldn't be opened. Please take another photo."
-                    source.delete()
-                    captureFile = null
-                } catch (exception: IllegalArgumentException) {
                     Log.e(TAG, "Could not load captured cover photo", exception)
                     coverError = "The photo couldn't be opened. Please take another photo."
                     source.delete()
@@ -266,15 +216,10 @@ fun BookEditScreen(
         } else {
             source?.delete()
             captureFile = null
-            captureUri = null
         }
     }
 
     fun takeCoverPhoto() {
-        if (coverStore == null) {
-            coverError = "Camera cover capture isn't available."
-            return
-        }
         try {
             val cameraDirectory = File(context.cacheDir, "camera-photos").apply {
                 if (!exists() && !mkdirs()) throw IOException("Could not create camera folder")
@@ -287,26 +232,17 @@ fun BookEditScreen(
                 "${context.packageName}.fileprovider",
                 file,
             )
-            captureUri = uri
             coverError = null
             cameraLauncher.launch(uri)
-        } catch (exception: IOException) {
+        } catch (exception: Exception) {
+            if (exception !is IOException && exception !is IllegalArgumentException &&
+                exception !is ActivityNotFoundException
+            ) {
+                throw exception
+            }
             Log.e(TAG, "Could not prepare cover photo capture", exception)
             captureFile?.delete()
             captureFile = null
-            captureUri = null
-            coverError = "Couldn't prepare the camera. Please try again."
-        } catch (exception: IllegalArgumentException) {
-            Log.e(TAG, "Could not prepare cover photo capture", exception)
-            captureFile?.delete()
-            captureFile = null
-            captureUri = null
-            coverError = "Couldn't prepare the camera. Please try again."
-        } catch (exception: ActivityNotFoundException) {
-            Log.e(TAG, "No camera app is available for cover capture", exception)
-            captureFile?.delete()
-            captureFile = null
-            captureUri = null
             coverError = "Couldn't prepare the camera. Please try again."
         }
     }
@@ -314,18 +250,31 @@ fun BookEditScreen(
     fun cancelCrop() {
         cropBitmap?.recycle()
         cropBitmap = null
+        cropping = false
         detectedCrop = null
         cropRotation = 0f
         captureFile?.delete()
         captureFile = null
-        captureUri = null
+    }
+
+    // Recreating the screen drops the bitmap, so decode the photo again from its saved file.
+    LaunchedEffect(cropping) {
+        val source = captureFile
+        if (cropping && cropBitmap == null && source != null) {
+            try {
+                cropBitmap = withContext(Dispatchers.IO) { coverStore.decodeForEditing(source, cropRotation) }
+            } catch (exception: IOException) {
+                Log.e(TAG, "Could not reload cover photo", exception)
+                coverError = "The photo couldn't be opened. Please take another photo."
+                cancelCrop()
+            }
+        }
     }
 
     fun rotateCrop(crop: NormalizedCrop) {
         val bitmap = cropBitmap ?: return
-        val store = coverStore ?: return
         scope.launch {
-            val rotated = withContext(Dispatchers.Default) { store.rotate(bitmap, 90f) }
+            val rotated = withContext(Dispatchers.Default) { coverStore.rotate(bitmap, 90f) }
             // The old bitmap may still be drawing, so it is left for the garbage collector.
             cropBitmap = rotated
             detectedCrop = crop
@@ -335,27 +284,40 @@ fun BookEditScreen(
 
     fun useCrop(crop: NormalizedCrop) {
         val source = captureFile ?: return
-        val store = coverStore ?: return
         scope.launch {
             try {
                 val newCover = withContext(Dispatchers.IO) {
-                    store.saveUserPhoto(source, crop, cropRotation)
+                    coverStore.saveUserPhoto(source, crop, cropRotation)
                 }
                 draft = draft.copy(coverFile = newCover, coverSourceUrl = "user-photo")
                 coverError = null
                 cropBitmap?.recycle()
                 cropBitmap = null
+                cropping = false
                 detectedCrop = null
                 cropRotation = 0f
                 source.delete()
                 captureFile = null
-                captureUri = null
             } catch (exception: IOException) {
                 Log.e(TAG, "Could not save cropped cover photo", exception)
                 coverError = "The cropped photo couldn't be saved. Please try again."
             } catch (exception: IllegalArgumentException) {
                 Log.e(TAG, "Could not crop cover photo", exception)
                 coverError = "The crop wasn't valid. Adjust it and try again."
+            }
+        }
+    }
+
+    fun runModelTask(task: ModelTask, setStatus: (ModelStatus?) -> Unit, work: suspend () -> ModelStatus) {
+        scope.launch {
+            runningTask = task
+            setStatus(null)
+            try {
+                setStatus(work())
+            } catch (exception: ModelException) {
+                setStatus(ModelStatus("${exception.message} Nothing was changed.", isError = true))
+            } finally {
+                runningTask = null
             }
         }
     }
@@ -434,14 +396,8 @@ fun BookEditScreen(
                         }
                         if (formError == null) {
                             scope.launch {
-                                try {
-                                    viewModel.save(
-                                        draft.toBook(existingBook = originalBook),
-                                    )
-                                    onSaved()
-                                } catch (_: SQLiteConstraintException) {
-                                    formError = "A book with that ISBN-13 is already in your library."
-                                }
+                                viewModel.save(draft.toBook(existingBook = originalBook))
+                                onSaved()
                             }
                         }
                     },
@@ -463,30 +419,28 @@ fun BookEditScreen(
             formError?.let {
                 Text(it, color = MaterialTheme.colorScheme.error)
             }
-            lookupMessage?.let {
+            lookupNotice?.let {
                 Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            lookupWarning?.let {
+            lookupProblem?.let {
                 Text(it, color = MaterialTheme.colorScheme.error)
             }
             coverError?.let {
                 Text(it, color = MaterialTheme.colorScheme.error)
             }
             draft.coverFile.takeIf(String::isNotBlank)?.let { coverFile ->
-                coverDirectory?.let { directory ->
-                    AsyncImage(
-                        model = File(directory, coverFile),
-                        contentDescription = "Book cover",
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 8.dp),
-                        contentScale = ContentScale.Fit,
-                    )
-                }
+                AsyncImage(
+                    model = File(coverDirectory, coverFile),
+                    contentDescription = "Book cover",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp),
+                    contentScale = ContentScale.Fit,
+                )
             }
             Button(
                 onClick = ::takeCoverPhoto,
-                enabled = captureUri == null,
+                enabled = captureFile == null,
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(if (draft.coverFile.isBlank()) "Take cover photo" else "Replace cover photo")
@@ -523,62 +477,22 @@ fun BookEditScreen(
             BookTextField("Subjects (BISAC)", draft.subjects, { draft = draft.copy(subjects = it) })
             Button(
                 onClick = {
-                    scope.launch {
-                        isMappingSubjects = true
-                        subjectMappingMessage = null
-                        subjectMappingFailed = false
-                        try {
-                            val subjects = viewModel.mapSubjectsToBisac(draft.toBook(originalBook))
-                            if (subjects.isEmpty()) {
-                                subjectMappingMessage =
-                                    "No confident BISAC classification was returned; subjects were left unchanged."
-                                subjectMappingFailed = true
-                            } else {
-                                draft = draft.copy(subjects = subjects.joinToString("; "))
-                                subjectMappingMessage = "Subjects mapped to BISAC."
-                            }
-                        } catch (exception: CancellationException) {
-                            throw exception
-                        } catch (exception: IOException) {
-                            subjectMappingMessage =
-                                "Could not map subjects to BISAC. Check the local model connection and try again."
-                            subjectMappingFailed = true
-                        } catch (exception: HttpException) {
-                            subjectMappingMessage =
-                                "Could not map subjects to BISAC. Check the local model connection and try again."
-                            subjectMappingFailed = true
-                        } catch (exception: JsonDataException) {
-                            subjectMappingMessage =
-                                "The local model returned an invalid BISAC response; subjects were left unchanged."
-                            subjectMappingFailed = true
-                        } catch (exception: IllegalArgumentException) {
-                            subjectMappingMessage =
-                                "The local model returned invalid BISAC subjects; subjects were left unchanged."
-                            subjectMappingFailed = true
-                        } catch (exception: IllegalStateException) {
-                            subjectMappingMessage = exception.message
-                                ?: "BISAC subject mapping is not configured."
-                            subjectMappingFailed = true
-                        } finally {
-                            isMappingSubjects = false
+                    runModelTask(ModelTask.SUBJECTS, { subjectStatus = it }) {
+                        val subjects = viewModel.mapSubjectsToBisac(draft.toBook(originalBook))
+                        if (subjects.isEmpty()) {
+                            ModelStatus("No confident BISAC classification was found. Nothing was changed.", isError = true)
+                        } else {
+                            draft = draft.copy(subjects = subjects.joinToString("; "))
+                            ModelStatus("Subjects mapped to BISAC.", isError = false)
                         }
                     }
                 },
-                enabled = !isMappingSubjects,
+                enabled = runningTask == null,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text(if (isMappingSubjects) "Mapping subjects…" else "Map subjects to BISAC")
+                Text(if (runningTask == ModelTask.SUBJECTS) "Mapping subjects…" else "Map subjects to BISAC")
             }
-            subjectMappingMessage?.let {
-                Text(
-                    it,
-                    color = if (subjectMappingFailed) {
-                        MaterialTheme.colorScheme.error
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                )
-            }
+            subjectStatus?.let { ModelStatusText(it) }
             BookTextField(
                 "Description",
                 draft.description,
@@ -587,70 +501,29 @@ fun BookEditScreen(
             )
             Button(
                 onClick = {
-                    scope.launch {
-                        isWritingDescription = true
-                        descriptionMessage = null
-                        descriptionFailed = false
+                    runModelTask(ModelTask.DESCRIPTION, { descriptionStatus = it }) {
                         val hadDescription = draft.description.isNotBlank()
-                        try {
-                            val description = viewModel.writeDescription(draft.toBook(originalBook))
-                            if (description == null) {
-                                descriptionMessage =
-                                    "The local model doesn't know this book; the description was left unchanged."
-                                descriptionFailed = true
-                            } else {
-                                draft = draft.copy(description = description)
-                                descriptionMessage =
-                                    if (hadDescription) "Description summarized." else "Description written."
-                            }
-                        } catch (exception: CancellationException) {
-                            throw exception
-                        } catch (exception: IOException) {
-                            descriptionMessage =
-                                "Could not write a description. Check the local model connection and try again."
-                            descriptionFailed = true
-                        } catch (exception: HttpException) {
-                            descriptionMessage =
-                                "Could not write a description. Check the local model connection and try again."
-                            descriptionFailed = true
-                        } catch (exception: JsonDataException) {
-                            descriptionMessage =
-                                "The local model returned an invalid response; the description was left unchanged."
-                            descriptionFailed = true
-                        } catch (exception: IllegalArgumentException) {
-                            descriptionMessage =
-                                "The local model returned an invalid description; the description was left unchanged."
-                            descriptionFailed = true
-                        } catch (exception: IllegalStateException) {
-                            descriptionMessage = exception.message
-                                ?: "Description writing is not configured."
-                            descriptionFailed = true
-                        } finally {
-                            isWritingDescription = false
+                        val description = viewModel.writeDescription(draft.toBook(originalBook))
+                        if (description == null) {
+                            ModelStatus("The book couldn't be identified. Nothing was changed.", isError = true)
+                        } else {
+                            draft = draft.copy(description = description)
+                            ModelStatus(if (hadDescription) "Description summarized." else "Description written.", isError = false)
                         }
                     }
                 },
-                enabled = !isWritingDescription,
+                enabled = runningTask == null,
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(
                     when {
-                        isWritingDescription -> "Writing description…"
+                        runningTask == ModelTask.DESCRIPTION -> "Writing description…"
                         draft.description.isBlank() -> "Write description"
                         else -> "Summarize description"
                     },
                 )
             }
-            descriptionMessage?.let {
-                Text(
-                    it,
-                    color = if (descriptionFailed) {
-                        MaterialTheme.colorScheme.error
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                )
-            }
+            descriptionStatus?.let { ModelStatusText(it) }
             BookTextField("Location", draft.location, { draft = draft.copy(location = it) })
             BookTextField("Notes", draft.notes, { draft = draft.copy(notes = it) }, singleLine = false)
             BookTextField(
@@ -662,7 +535,7 @@ fun BookEditScreen(
             ChoiceField(
                 label = "Read status",
                 value = draft.readStatus,
-                choices = READ_STATUSES.map { it to it.replaceFirstChar(Char::uppercase) },
+                choices = ReadStatus.choices.map { it to it.replaceFirstChar(Char::uppercase) },
             ) { draft = draft.copy(readStatus = it) }
         }
     }
@@ -675,11 +548,12 @@ fun BookEditScreen(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        originalBook?.let { book ->
-                            scope.launch { viewModel.delete(book) }
-                        }
                         showDeleteConfirmation = false
-                        onDone()
+                        // Leaving first would cancel this scope before the delete finished.
+                        scope.launch {
+                            originalBook?.let { viewModel.delete(it) }
+                            onDone()
+                        }
                     },
                 ) {
                     Text("Delete")
@@ -751,8 +625,7 @@ private fun ChoiceField(
         modifier = Modifier.fillMaxWidth(),
     ) {
         OutlinedTextField(
-            // A value outside the choices, such as one saved before they existed, is shown as is.
-            value = choices.firstOrNull { it.first == value }?.second ?: value,
+            value = choices.firstOrNull { it.first == value }?.second.orEmpty(),
             onValueChange = {},
             readOnly = true,
             label = { Text(label) },
@@ -775,7 +648,15 @@ private fun ChoiceField(
     }
 }
 
-private val READ_STATUSES = listOf("unread", "reading", "read")
+private val FileSaver = Saver<File?, String>(save = { it?.path }, restore = ::File)
+
+@Composable
+private fun ModelStatusText(status: ModelStatus) {
+    Text(
+        status.text,
+        color = if (status.isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
 
 private fun String.optional(): String? = trim().takeIf(String::isNotBlank)
 

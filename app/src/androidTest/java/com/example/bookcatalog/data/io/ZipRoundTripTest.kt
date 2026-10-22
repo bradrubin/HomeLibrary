@@ -69,7 +69,7 @@ class ZipRoundTripTest {
     private fun repository(): BookRepository {
         val database = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).build()
         databases += database
-        return BookRepository(database)
+        return BookRepository(database, File(root, "covers"))
     }
 
     private fun day(date: String) = LocalDate.parse(date).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()

@@ -59,15 +59,21 @@ fun BarcodeScanScreen(
     var scanError by rememberSaveable { mutableStateOf<String?>(null) }
     var duplicateBook by remember { mutableStateOf<Book?>(null) }
 
-    fun lookUpBook(isbn13: String) {
+    /** Looks the book up, first offering the copy already in the library unless [addCopy] is set. */
+    fun lookUpBook(isbn13: String, addCopy: Boolean = false) {
         scope.launch {
             isLookingUp = true
             scanError = null
             try {
-                onBookFound(viewModel.lookup(isbn13))
+                val existingBook = if (addCopy) null else viewModel.findExistingBook(isbn13)
+                if (existingBook != null) {
+                    duplicateBook = existingBook
+                } else {
+                    onBookFound(viewModel.lookup(isbn13))
+                }
             } catch (exception: SQLiteException) {
-                Log.e(TAG, "Could not add scanned book to the library", exception)
-                scanError = "Could not access the library. Please try again."
+                Log.e(TAG, "Could not check the library for ISBN $isbn13", exception)
+                scanError = "Could not access your library. Please try again."
             } finally {
                 isLookingUp = false
             }
@@ -81,24 +87,7 @@ fun BarcodeScanScreen(
                 "That barcode isn't a valid book ISBN. Enter the ISBN manually or scan a 13-digit book barcode."
             return
         }
-
-        scope.launch {
-            isLookingUp = true
-            scanError = null
-            try {
-                val existingBook = viewModel.findExistingBook(isbn13)
-                if (existingBook != null) {
-                    duplicateBook = existingBook
-                } else {
-                    onBookFound(viewModel.lookup(isbn13))
-                }
-            } catch (exception: SQLiteException) {
-                Log.e(TAG, "Could not process scanned ISBN $isbn13", exception)
-                scanError = "Could not access your library. Please try again."
-            } finally {
-                isLookingUp = false
-            }
-        }
+        lookUpBook(isbn13)
     }
 
     fun startScan() {
@@ -220,7 +209,7 @@ fun BarcodeScanScreen(
                     TextButton(
                         onClick = {
                             duplicateBook = null
-                            lookUpBook(existingBook.isbn13.orEmpty())
+                            lookUpBook(existingBook.isbn13.orEmpty(), addCopy = true)
                         },
                     ) {
                         Text("Add another copy")

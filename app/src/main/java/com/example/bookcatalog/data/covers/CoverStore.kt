@@ -1,24 +1,27 @@
 package com.example.bookcatalog.data.covers
 
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
+import android.graphics.ImageDecoder
 import android.graphics.Matrix
+import android.os.Parcelable
 import android.util.Log
-import androidx.exifinterface.media.ExifInterface
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
+import java.nio.ByteBuffer
 import java.util.UUID
+import kotlinx.parcelize.Parcelize
 import kotlin.math.max
 
+@Parcelize
 data class NormalizedCrop(
     val left: Float,
     val top: Float,
     val right: Float,
     val bottom: Float,
-) {
+) : Parcelable {
     init {
         require(left in 0f..1f && top in 0f..1f)
         require(right in 0f..1f && bottom in 0f..1f)
@@ -37,58 +40,23 @@ class CoverStore(
         val response = httpClient.newCall(
             Request.Builder().url(sourceUrl).header("User-Agent", "BookCatalog/1.0").build(),
         ).execute()
-        response.use {
+        val bytes = response.use {
             if (!it.isSuccessful) throw IOException("Cover request failed with HTTP ${it.code}")
-            val bytes = it.body?.bytes() ?: throw IOException("Cover response was empty")
-            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
-            if (bounds.outWidth < MIN_COVER_WIDTH || bounds.outHeight < MIN_COVER_WIDTH) {
-                Log.i(TAG, "Ignoring placeholder-sized cover for $isbn13")
-                return null
-            }
-
-            val options = BitmapFactory.Options().apply {
-                inSampleSize = sampleSize(bounds.outWidth, bounds.outHeight, MAX_EDGE)
-            }
-            val decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
-                ?: throw IOException("Cover image could not be decoded")
-            val resized = resize(decoded)
-            if (resized !== decoded) decoded.recycle()
-
-            val target = File(coverDirectory, "$isbn13.jpg")
-            val temporary = File(coverDirectory, "$isbn13.jpg.tmp")
-            coverDirectory.mkdirs()
-            try {
-                FileOutputStream(temporary).use { output ->
-                    if (!resized.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, output)) {
-                        throw IOException("Cover image could not be encoded")
-                    }
-                }
-                if (!temporary.renameTo(target)) {
-                    throw IOException("Cover image could not be saved")
-                }
-            } finally {
-                resized.recycle()
-                temporary.delete()
-            }
-            return target.name
+            it.body?.bytes() ?: throw IOException("Cover response was empty")
         }
+        val decoded = decode(ImageDecoder.createSource(ByteBuffer.wrap(bytes)), MAX_EDGE)
+        if (decoded.sourceWidth < MIN_COVER_WIDTH || decoded.sourceHeight < MIN_COVER_WIDTH) {
+            Log.i(TAG, "Ignoring placeholder-sized cover for $isbn13")
+            decoded.bitmap.recycle()
+            return null
+        }
+        return save(resize(decoded.bitmap), "$isbn13.jpg")
     }
 
+    /** Decodes a camera photo upright, since ImageDecoder applies its EXIF orientation. */
     fun decodeForEditing(file: File, rotationDegrees: Float = 0f): Bitmap {
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeFile(file.absolutePath, bounds)
-        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
-            throw IOException("Captured photo could not be decoded")
-        }
-        val bitmap = BitmapFactory.decodeFile(
-            file.absolutePath,
-            BitmapFactory.Options().apply {
-                inSampleSize = sampleSize(bounds.outWidth, bounds.outHeight, EDITING_MAX_EDGE)
-            },
-        ) ?: throw IOException("Captured photo could not be decoded")
-        val oriented = orientBitmap(file, bitmap)
-        return rotate(oriented, rotationDegrees).also { if (it !== oriented) oriented.recycle() }
+        val photo = decode(ImageDecoder.createSource(file), EDITING_MAX_EDGE).bitmap
+        return rotate(photo, rotationDegrees).also { if (it !== photo) photo.recycle() }
     }
 
     /**
@@ -109,48 +77,39 @@ class CoverStore(
         val bottom = (crop.bottom * source.height).toInt().coerceIn(top + 1, source.height)
         val cropped = Bitmap.createBitmap(source, left, top, right - left, bottom - top)
         if (cropped !== source) source.recycle()
-        val resized = resize(cropped)
-        if (resized !== cropped) cropped.recycle()
+        return save(resize(cropped), "user-${UUID.randomUUID()}.jpg")
+    }
 
-        val target = File(coverDirectory, "user-${UUID.randomUUID()}.jpg")
-        val temporary = File(coverDirectory, "${target.name}.tmp")
+    /** Decodes in software memory, so the pixels can be read and the bitmap transformed. */
+    private fun decode(source: ImageDecoder.Source, maxEdge: Int): DecodedImage {
+        var width = 0
+        var height = 0
+        val bitmap = ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
+            width = info.size.width
+            height = info.size.height
+            decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+            decoder.setTargetSampleSize(sampleSize(width, height, maxEdge))
+        }
+        return DecodedImage(bitmap, width, height)
+    }
+
+    /** Writes a JPEG through a temporary file, so a failed write never leaves a partial cover. */
+    private fun save(bitmap: Bitmap, name: String): String {
+        val target = File(coverDirectory, name)
+        val temporary = File(coverDirectory, "$name.tmp")
         coverDirectory.mkdirs()
         try {
-            writeBitmap(resized, temporary)
-            if (!temporary.renameTo(target)) {
-                throw IOException("Cover image could not be saved")
+            FileOutputStream(temporary).use { output ->
+                if (!bitmap.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, output)) {
+                    throw IOException("Cover image could not be encoded")
+                }
             }
+            if (!temporary.renameTo(target)) throw IOException("Cover image could not be saved")
         } finally {
-            resized.recycle()
+            bitmap.recycle()
             temporary.delete()
         }
         return target.name
-    }
-
-    private fun orientBitmap(file: File, bitmap: Bitmap): Bitmap {
-        val orientation = ExifInterface(file).getAttributeInt(
-            ExifInterface.TAG_ORIENTATION,
-            ExifInterface.ORIENTATION_NORMAL,
-        )
-        val matrix = Matrix()
-        when (orientation) {
-            ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> matrix.setScale(-1f, 1f)
-            ExifInterface.ORIENTATION_ROTATE_180 -> matrix.setRotate(180f)
-            ExifInterface.ORIENTATION_FLIP_VERTICAL -> matrix.setScale(1f, -1f)
-            ExifInterface.ORIENTATION_TRANSPOSE -> {
-                matrix.setRotate(90f)
-                matrix.postScale(-1f, 1f)
-            }
-            ExifInterface.ORIENTATION_ROTATE_90 -> matrix.setRotate(90f)
-            ExifInterface.ORIENTATION_TRANSVERSE -> {
-                matrix.setRotate(-90f)
-                matrix.postScale(-1f, 1f)
-            }
-            ExifInterface.ORIENTATION_ROTATE_270 -> matrix.setRotate(-90f)
-        }
-        if (matrix.isIdentity) return bitmap
-        return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
-            .also { if (it !== bitmap) bitmap.recycle() }
     }
 
     private fun sampleSize(width: Int, height: Int, maxEdge: Int): Int {
@@ -159,6 +118,7 @@ class CoverStore(
         return sample
     }
 
+    /** Scales down to [MAX_EDGE], recycling the original when a new bitmap is made. */
     private fun resize(bitmap: Bitmap): Bitmap {
         val longestEdge = max(bitmap.width, bitmap.height)
         if (longestEdge <= MAX_EDGE) return bitmap
@@ -168,16 +128,10 @@ class CoverStore(
             (bitmap.width * scale).toInt().coerceAtLeast(1),
             (bitmap.height * scale).toInt().coerceAtLeast(1),
             true,
-        )
+        ).also { if (it !== bitmap) bitmap.recycle() }
     }
 
-    private fun writeBitmap(bitmap: Bitmap, file: File) {
-        FileOutputStream(file).use { output ->
-            if (!bitmap.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, output)) {
-                throw IOException("Cover image could not be encoded")
-            }
-        }
-    }
+    private class DecodedImage(val bitmap: Bitmap, val sourceWidth: Int, val sourceHeight: Int)
 
     companion object {
         private const val TAG = "CoverStore"

@@ -26,7 +26,7 @@ Personal use, single user, sideloaded. No Play Store release, no accounts, no cl
 - **Async:** Coroutines + Flow
 - **DI:** Keep it simple — manual dependency injection via an `AppContainer` in the Application class. (Hilt is acceptable if preferred, but not required.)
 - **Build:** Gradle Kotlin DSL with a version catalog (`libs.versions.toml`). Use current stable versions of all libraries.
-- **minSdk:** 26, **targetSdk:** current stable
+- **minSdk:** 36 (Android 16), **targetSdk:** current stable
 - **Package name:** `com.example.bookcatalog` (placeholder — easy to change)
 
 ---

@@ -1,5 +1,6 @@
 package com.example.bookcatalog.data.metadata
 
+import com.example.bookcatalog.data.db.Book
 import com.squareup.moshi.Moshi
 
 /**
@@ -17,7 +18,7 @@ class HomeChatDescriptionWriter(
     private val argumentsAdapter = moshi.adapter(WebSearchArguments::class.java)
 
     /** Returns null when there is no source description and the book couldn't be identified. */
-    suspend fun write(book: com.example.bookcatalog.data.db.Book): String? {
+    suspend fun write(book: Book): String? {
         val input = DescriptionBookInput(
             isbn13 = book.isbn13.orEmpty(),
             title = book.title,

@@ -1,5 +1,6 @@
 package com.example.bookcatalog.data.metadata
 
+import com.example.bookcatalog.data.db.Book
 interface BookMetadataSource {
     val name: String
     suspend fun fetch(isbn13: String): BookMetadata?
@@ -35,7 +36,7 @@ data class BookMetadata(
 }
 
 data class MetadataLookupResult(
-    val book: com.example.bookcatalog.data.db.Book,
+    val book: Book,
     val message: String? = null,
     val warning: String? = null,
 )

@@ -4,6 +4,7 @@ import com.example.bookcatalog.data.db.Book
 import com.example.bookcatalog.domain.BookFormat
 import com.example.bookcatalog.domain.IsbnUtils
 import com.example.bookcatalog.domain.PublicationYear
+import com.example.bookcatalog.domain.ReadStatus
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import java.io.BufferedInputStream
@@ -58,7 +59,7 @@ class LibraryImporter(
         val buffered = BufferedInputStream(input)
         buffered.mark(ZIP_SIGNATURE.size)
         val start = ByteArray(ZIP_SIGNATURE.size)
-        val read = buffered.readNBytesCompat(start)
+        val read = buffered.readNBytes(start, 0, start.size)
         buffered.reset()
         if (read < ZIP_SIGNATURE.size || !start.contentEquals(ZIP_SIGNATURE)) return buffered.readBytes()
 
@@ -240,7 +241,7 @@ class LibraryImporter(
             val raw = values[CsvColumn.READ_STATUS]?.trim()?.lowercase().orEmpty()
             return when {
                 raw.isEmpty() -> null
-                raw in READ_STATUSES -> raw
+                raw in ReadStatus.choices -> raw
                 else -> {
                     warnings += "Read status \"$raw\" was ignored."
                     null
@@ -283,16 +284,6 @@ class LibraryImporter(
         }
     }
 
-    private fun InputStream.readNBytesCompat(buffer: ByteArray): Int {
-        var total = 0
-        while (total < buffer.size) {
-            val count = read(buffer, total, buffer.size - total)
-            if (count < 0) break
-            total += count
-        }
-        return total
-    }
-
     private sealed interface IsbnValue {
         /** The file has no ISBN columns. */
         data object Absent : IsbnValue
@@ -311,7 +302,6 @@ class LibraryImporter(
 
     private companion object {
         val ZIP_SIGNATURE = byteArrayOf(0x50, 0x4B, 0x03, 0x04)
-        val READ_STATUSES = setOf("unread", "reading", "read")
         const val IMPORT_SOURCE = "Import"
         const val COVER_FETCH_INTERVAL_MS = 1_000L
     }

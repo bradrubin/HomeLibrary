@@ -1,5 +1,6 @@
 package com.example.bookcatalog.data.metadata
 
+import com.example.bookcatalog.data.db.Book
 import com.squareup.moshi.Json
 import com.squareup.moshi.Moshi
 import retrofit2.http.Body
@@ -22,7 +23,7 @@ class HomeChatBisacSubjectMapper(
 ) {
     private val inputAdapter = moshi.adapter(BisacBookInput::class.java)
 
-    suspend fun map(book: com.example.bookcatalog.data.db.Book): List<String> {
+    suspend fun map(book: Book): List<String> {
         val input = BisacBookInput(
             title = book.title,
             authors = book.authors.orEmpty().split(';').map(String::trim).filter(String::isNotEmpty),

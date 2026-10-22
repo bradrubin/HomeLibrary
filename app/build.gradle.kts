@@ -6,6 +6,7 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
+    alias(libs.plugins.kotlin.parcelize)
 }
 
 val localProperties = Properties().apply {
@@ -78,7 +79,7 @@ android {
 
     defaultConfig {
         applicationId = "com.example.bookcatalog"
-        minSdk = 26
+        minSdk = 36
         targetSdk = 36
         versionCode = 1
         versionName = "1.0"
@@ -95,7 +96,6 @@ android {
         buildConfig = true
     }
 
-    sourceSets.getByName("androidTest").assets.srcDir("$projectDir/schemas")
     sourceSets.getByName("main").res.srcDir(generatedNetworkSecurityResources)
 }
 
@@ -124,14 +124,12 @@ dependencies {
     implementation(libs.moshi.kotlin)
     implementation(libs.coil.compose)
     implementation(libs.play.services.code.scanner)
-    implementation(libs.androidx.exifinterface)
     implementation(libs.commons.csv)
 
     debugImplementation(libs.androidx.compose.ui.tooling)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.test.ext.junit)
-    androidTestImplementation(libs.androidx.room.testing)
 }
 
 ksp {

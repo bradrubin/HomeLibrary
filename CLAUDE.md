@@ -8,7 +8,7 @@ Navigation Compose, Room, and a manual repository/AppContainer architecture.
 - Follow the existing Kotlin, Compose, Room, and Gradle conventions.
 - Keep Android app changes scoped to the requested behavior and preserve
   compatibility with the project's configured Android and Kotlin versions.
-- The package name is `com.example.bookcatalog`, minSdk is 26, and targetSdk
+- The package name is `com.example.bookcatalog`, minSdk is 36, and targetSdk
   follows the project's configured target.
 - Run the most relevant configured Gradle build or tests after code changes and
   report any checks that could not be run.

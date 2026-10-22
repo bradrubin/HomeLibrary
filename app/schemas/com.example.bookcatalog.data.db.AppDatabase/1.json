@@ -2,11 +2,11 @@
   "formatVersion": 1,
   "database": {
     "version": 1,
-    "identityHash": "b5e0aaf83a82135d4301fb4244bf24ab",
+    "identityHash": "9838a7a989b35b84158d8df0ef0c7e7d",
     "entities": [
       {
         "tableName": "books",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `isbn13` TEXT, `isbn10` TEXT, `title` TEXT NOT NULL, `subtitle` TEXT, `authors` TEXT, `publisher` TEXT, `publishedDate` TEXT, `pageCount` INTEGER, `language` TEXT, `subjects` TEXT, `description` TEXT, `coverFile` TEXT, `coverSourceUrl` TEXT, `dataSource` TEXT, `location` TEXT, `notes` TEXT, `rating` INTEGER, `readStatus` TEXT, `dateAdded` INTEGER NOT NULL, `dateModified` INTEGER NOT NULL)",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `isbn13` TEXT, `isbn10` TEXT, `title` TEXT NOT NULL, `subtitle` TEXT, `authors` TEXT, `publisher` TEXT, `publishedDate` TEXT, `pageCount` INTEGER, `format` TEXT, `language` TEXT, `subjects` TEXT, `description` TEXT, `coverFile` TEXT, `coverSourceUrl` TEXT, `dataSource` TEXT, `location` TEXT, `notes` TEXT, `rating` INTEGER, `readStatus` TEXT, `dateAdded` INTEGER NOT NULL, `dateModified` INTEGER NOT NULL)",
         "fields": [
           {
             "fieldPath": "id",
@@ -54,6 +54,11 @@
             "fieldPath": "pageCount",
             "columnName": "pageCount",
             "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "format",
+            "columnName": "format",
+            "affinity": "TEXT"
           },
           {
             "fieldPath": "language",
@@ -127,19 +132,19 @@
         "indices": [
           {
             "name": "index_books_isbn13",
-            "unique": true,
+            "unique": false,
             "columnNames": [
               "isbn13"
             ],
             "orders": [],
-            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_books_isbn13` ON `${TABLE_NAME}` (`isbn13`)"
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_books_isbn13` ON `${TABLE_NAME}` (`isbn13`)"
           }
         ]
       }
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'b5e0aaf83a82135d4301fb4244bf24ab')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '9838a7a989b35b84158d8df0ef0c7e7d')"
     ]
   }
 }

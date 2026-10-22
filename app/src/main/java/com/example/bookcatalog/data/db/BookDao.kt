@@ -21,6 +21,12 @@ interface BookDao {
     @Query("SELECT * FROM books WHERE isbn13 = :isbn13 ORDER BY id ASC LIMIT 1")
     suspend fun getByIsbn13(isbn13: String): Book?
 
+    @Query("SELECT COUNT(*) FROM books WHERE coverFile = :coverFile")
+    suspend fun countWithCover(coverFile: String): Int
+
+    @Query("SELECT DISTINCT coverFile FROM books WHERE coverFile IS NOT NULL")
+    suspend fun coverFiles(): List<String>
+
     @Insert
     suspend fun insert(book: Book): Long
 

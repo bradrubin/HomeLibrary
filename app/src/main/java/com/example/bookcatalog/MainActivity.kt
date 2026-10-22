@@ -3,7 +3,6 @@ package com.example.bookcatalog
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -12,7 +11,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
@@ -21,9 +19,6 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import com.example.bookcatalog.data.BookRepository
-import com.example.bookcatalog.data.covers.CoverStore
-import com.example.bookcatalog.data.metadata.BookMetadataRepository
 import com.example.bookcatalog.data.metadata.MetadataLookupResult
 import com.example.bookcatalog.ui.BarcodeScanScreen
 import com.example.bookcatalog.ui.BarcodeScanViewModel
@@ -36,7 +31,6 @@ import com.example.bookcatalog.ui.IsbnLookupViewModel
 import com.example.bookcatalog.ui.LibraryScreen
 import com.example.bookcatalog.ui.LibraryViewModel
 import com.example.bookcatalog.ui.theme.BookCatalogTheme
-import java.io.File
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -44,26 +38,12 @@ class MainActivity : ComponentActivity() {
         val container = (application as BookCatalogApp).container
 
         setContent {
-            BookCatalogTheme(darkTheme = isSystemInDarkTheme()) {
+            BookCatalogTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background,
                 ) {
-                    BookCatalogNavigation(
-                        repository = container.bookRepository,
-                        metadataRepository = container.metadataRepository,
-                        coverDirectory = container.coverStore.coverDirectory,
-                        coverStore = container.coverStore,
-                        importExportViewModelFactory = viewModelFactory {
-                            initializer {
-                                ImportExportViewModel(
-                                    container.libraryExporter,
-                                    container.libraryImporter,
-                                    applicationContext.contentResolver,
-                                )
-                            }
-                        },
-                    )
+                    BookCatalogNavigation(container)
                 }
             }
         }
@@ -71,13 +51,10 @@ class MainActivity : ComponentActivity() {
 }
 
 @androidx.compose.runtime.Composable
-private fun BookCatalogNavigation(
-    repository: BookRepository,
-    metadataRepository: BookMetadataRepository,
-    coverDirectory: File,
-    coverStore: CoverStore,
-    importExportViewModelFactory: ViewModelProvider.Factory,
-) {
+private fun BookCatalogNavigation(container: AppContainer) {
+    val repository = container.bookRepository
+    val metadataRepository = container.metadataRepository
+    val coverStore = container.coverStore
     val navController = rememberNavController()
     var pendingLookup by remember { mutableStateOf<MetadataLookupResult?>(null) }
     NavHost(navController = navController, startDestination = "library") {
@@ -89,7 +66,7 @@ private fun BookCatalogNavigation(
             )
             LibraryScreen(
                 viewModel = viewModel,
-                coverDirectory = coverDirectory,
+                coverDirectory = coverStore.coverDirectory,
                 onAddBook = { navController.navigate("edit/new") },
                 onScanBook = { navController.navigate("scan") },
                 onLookupBook = { navController.navigate("lookup") },
@@ -99,7 +76,17 @@ private fun BookCatalogNavigation(
         }
         composable("import-export") {
             ImportExportScreen(
-                viewModel = viewModel(factory = importExportViewModelFactory),
+                viewModel = viewModel(
+                    factory = viewModelFactory {
+                        initializer {
+                            ImportExportViewModel(
+                                container.libraryExporter,
+                                container.libraryImporter,
+                                container.contentResolver,
+                            )
+                        }
+                    },
+                ),
                 onBack = { navController.popBackStack() },
             )
         }
@@ -157,7 +144,7 @@ private fun BookCatalogNavigation(
                 initialBook = pendingLookup?.book.takeIf { bookId == null },
                 lookupMessage = pendingLookup?.message.takeIf { bookId == null },
                 lookupWarning = pendingLookup?.warning.takeIf { bookId == null },
-                coverDirectory = coverDirectory,
+                coverDirectory = coverStore.coverDirectory,
                 coverStore = coverStore,
                 onDone = {
                     pendingLookup = null

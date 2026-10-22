@@ -38,16 +38,20 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import android.graphics.Bitmap
+import android.os.Parcelable
+import androidx.compose.runtime.saveable.rememberSaveable
+import kotlinx.parcelize.Parcelize
 import com.example.bookcatalog.data.covers.NormalizedCrop
 import kotlin.math.abs
 import kotlin.math.min
 
+@Parcelize
 private data class CropSelection(
     val left: Float,
     val top: Float,
     val right: Float,
     val bottom: Float,
-) {
+) : Parcelable {
     fun normalized() = NormalizedCrop(left, top, right, bottom)
 
     /** The same area once the photo is turned a quarter turn clockwise. */
@@ -66,8 +70,9 @@ fun CropPhotoScreen(
     BackHandler(onBack = onCancel)
     val handleColor = MaterialTheme.colorScheme.primary
     // Rotating hands back a crop, so remember whether the first one came from detection.
-    val edgesFound = remember { initialCrop != null }
-    var selection by remember(bitmap) {
+    val edgesFound = rememberSaveable { initialCrop != null }
+    // Saved, so the adjusted frame survives rotation; reset when a rotation hands back a new crop.
+    var selection by rememberSaveable(initialCrop, bitmap.width, bitmap.height) {
         mutableStateOf(
             initialCrop?.let { CropSelection(it.left, it.top, it.right, it.bottom) }
                 ?: CropSelection(0.05f, 0.05f, 0.95f, 0.95f),

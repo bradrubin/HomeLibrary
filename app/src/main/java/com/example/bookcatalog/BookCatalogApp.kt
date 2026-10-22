@@ -1,9 +1,9 @@
 package com.example.bookcatalog
 
 import android.app.Application
+import android.content.ContentResolver
 import android.util.Log
 import androidx.room.Room
-import com.example.bookcatalog.BuildConfig
 import com.example.bookcatalog.data.covers.CoverStore
 import com.example.bookcatalog.data.BookRepository
 import com.example.bookcatalog.data.db.AppDatabase
@@ -28,7 +28,10 @@ import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
 import java.io.File
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 class BookCatalogApp : Application() {
@@ -46,11 +49,9 @@ class AppContainer(application: Application) {
         application,
         AppDatabase::class.java,
         "book-catalog.db",
-    )
-        .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3)
-        .build()
+    ).build()
 
-    val bookRepository = BookRepository(database)
+    val contentResolver: ContentResolver = application.contentResolver
 
     private val httpClient = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
@@ -73,6 +74,7 @@ class AppContainer(application: Application) {
         .build()
 
     val coverStore = CoverStore(application.filesDir, httpClient)
+    val bookRepository = BookRepository(database, coverStore.coverDirectory)
     private val localLlmBaseUrl = BuildConfig.HOMECHAT_LLM_BASE_URL
     private val homeChatApi = createHomeChatApi()
     private val subjectMapper = homeChatApi?.let {
@@ -116,6 +118,12 @@ class AppContainer(application: Application) {
         stagingDirectory = File(application.cacheDir, "import-covers"),
         fetchCover = { isbn13, url -> withContext(Dispatchers.IO) { coverStore.download(isbn13, url) } },
     )
+
+    init {
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            bookRepository.deleteUnusedCovers(olderThanMillis = TimeUnit.DAYS.toMillis(1))
+        }
+    }
 
     private fun String.ensureTrailingSlash(): String =
         if (endsWith('/')) this else "$this/"

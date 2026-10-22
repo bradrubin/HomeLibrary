@@ -2,8 +2,10 @@ package com.example.bookcatalog.data.metadata
 
 import android.util.Log
 import com.example.bookcatalog.data.covers.CoverStore
+import com.example.bookcatalog.data.db.Book
 import com.example.bookcatalog.domain.IsbnUtils
 import com.squareup.moshi.JsonDataException
+import com.squareup.moshi.JsonEncodingException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
@@ -15,6 +17,9 @@ import kotlinx.coroutines.withTimeoutOrNull
 import retrofit2.HttpException
 import java.io.IOException
 
+/** A HomeChat request that failed in an expected way, with a [message] to show the user. */
+class ModelException(message: String, cause: Throwable? = null) : Exception(message, cause)
+
 class BookMetadataRepository(
     private val sources: List<BookMetadataSource>,
     private val coverStore: CoverStore,
@@ -22,53 +27,34 @@ class BookMetadataRepository(
     private val descriptionWriter: HomeChatDescriptionWriter? = null,
 ) {
     /** Returns null when there is no description to summarize and the model doesn't know the book. */
-    suspend fun writeDescription(book: com.example.bookcatalog.data.db.Book): String? {
-        val writer = descriptionWriter
-            ?: throw IllegalStateException("Description writing is not configured.")
-        return try {
-            // withTimeout, not withTimeoutOrNull, since null already means "no description".
-            withTimeout(DESCRIPTION_TIMEOUT_MS) { writer.write(book) }
-        } catch (exception: TimeoutCancellationException) {
-            Log.w(TAG, "Description writing timed out for ${book.isbn13}", exception)
-            throw IOException("Description writing timed out.", exception)
-        } catch (exception: CancellationException) {
-            throw exception
-        } catch (exception: IOException) {
-            Log.w(TAG, "Could not write description for ${book.isbn13}", exception)
-            throw exception
-        } catch (exception: HttpException) {
-            Log.w(TAG, "Could not write description for ${book.isbn13}", exception)
-            throw exception
-        } catch (exception: JsonDataException) {
-            Log.w(TAG, "Could not parse description response for ${book.isbn13}", exception)
-            throw exception
-        } catch (exception: IllegalArgumentException) {
-            Log.w(TAG, "Local model returned an invalid description for ${book.isbn13}", exception)
-            throw exception
-        }
+    suspend fun writeDescription(book: Book): String? {
+        val writer = descriptionWriter ?: throw ModelException("Description writing is not configured.")
+        return callModel("write a description", DESCRIPTION_TIMEOUT_MS, book) { writer.write(book) }
     }
 
-    suspend fun mapSubjectsToBisac(book: com.example.bookcatalog.data.db.Book): List<String> {
-        val mapper = subjectMapper
-            ?: throw IllegalStateException("BISAC subject mapping is not configured.")
-        return try {
-            withTimeoutOrNull(SUBJECT_MAPPING_TIMEOUT_MS) {
-                mapper.map(book)
-            } ?: throw IOException("BISAC subject mapping timed out.")
+    suspend fun mapSubjectsToBisac(book: Book): List<String> {
+        val mapper = subjectMapper ?: throw ModelException("BISAC subject mapping is not configured.")
+        return callModel("map subjects to BISAC", SUBJECT_MAPPING_TIMEOUT_MS, book) { mapper.map(book) }
+    }
+
+    /** Turns the ways a model call can fail into a [ModelException] saying what went wrong. */
+    private suspend fun <T> callModel(task: String, timeoutMs: Long, book: Book, call: suspend () -> T): T {
+        try {
+            return withTimeout(timeoutMs) { call() }
+        } catch (exception: TimeoutCancellationException) {
+            Log.w(TAG, "Timed out trying to $task for ${book.isbn13}", exception)
+            throw ModelException("Couldn't $task: the local model took too long.", exception)
         } catch (exception: CancellationException) {
             throw exception
-        } catch (exception: IOException) {
-            Log.w(TAG, "Could not map subjects to BISAC for ${book.isbn13}", exception)
-            throw exception
-        } catch (exception: HttpException) {
-            Log.w(TAG, "Could not map subjects to BISAC for ${book.isbn13}", exception)
-            throw exception
-        } catch (exception: JsonDataException) {
-            Log.w(TAG, "Could not parse BISAC subject response for ${book.isbn13}", exception)
-            throw exception
-        } catch (exception: IllegalArgumentException) {
-            Log.w(TAG, "Local model returned invalid BISAC subjects for ${book.isbn13}", exception)
-            throw exception
+        } catch (exception: Exception) {
+            val reason = when (exception) {
+                is JsonEncodingException, is JsonDataException, is IllegalArgumentException ->
+                    "the local model returned an invalid response."
+                is IOException, is HttpException -> "check the local model connection and try again."
+                else -> throw exception
+            }
+            Log.w(TAG, "Could not $task for ${book.isbn13}", exception)
+            throw ModelException("Couldn't $task: $reason", exception)
         }
     }
 
@@ -94,61 +80,48 @@ class BookMetadataRepository(
                 },
             )
 
-        var coverDownloadFailed = false
         var mappedBook = book
+        var coverDownloadErrored = false
         val coverUrls = listOfNotNull(
             openResult?.metadata?.coverUrl,
             googleResult?.metadata?.coverUrl,
         ).distinct()
         for (coverUrl in coverUrls) {
-            try {
-                val coverFile = withContext(Dispatchers.IO) {
-                    coverStore.download(isbn13, coverUrl)
-                }
-                if (coverFile != null) {
-                    mappedBook = book.copy(
-                        coverFile = coverFile,
-                        coverSourceUrl = coverUrl,
-                    )
-                    break
-                }
+            val coverFile = try {
+                withContext(Dispatchers.IO) { coverStore.download(isbn13, coverUrl) }
             } catch (exception: IOException) {
                 Log.w(TAG, "Could not download cover for $isbn13", exception)
-                coverDownloadFailed = true
+                coverDownloadErrored = true
+                null
             } catch (exception: IllegalArgumentException) {
                 Log.w(TAG, "Invalid cover URL for $isbn13", exception)
-                coverDownloadFailed = true
+                coverDownloadErrored = true
+                null
+            }
+            if (coverFile != null) {
+                mappedBook = book.copy(coverFile = coverFile, coverSourceUrl = coverUrl)
+                break
             }
         }
+        // Only worth mentioning when an error, not just a placeholder image, left the book without one.
+        val coverDownloadFailed = coverDownloadErrored && mappedBook.coverFile == null
         var subjectMappingFailed = false
         val usedLibraryOfCongress = book.dataSource.orEmpty().split('+').contains("LibraryOfCongress")
         val hasPublisherBisac = usedLibraryOfCongress &&
             locResult?.metadata?.bisacSubjects.orEmpty().isNotEmpty()
         if (subjectMapper != null && !hasPublisherBisac) {
-            try {
-                val subjects = mapSubjectsToBisac(mappedBook)
-                if (subjects.isNullOrEmpty()) {
-                    subjectMappingFailed = true
-                } else {
-                    mappedBook = mappedBook.copy(
-                        subjects = subjects.joinToString("; "),
-                        dataSource = mappedBook.dataSource.withHomeChat(),
-                    )
-                }
-            } catch (exception: CancellationException) {
-                throw exception
-            } catch (exception: IOException) {
-                Log.w(TAG, "Could not map subjects to BISAC for $isbn13", exception)
+            val subjects = try {
+                mapSubjectsToBisac(mappedBook)
+            } catch (_: ModelException) {
+                emptyList()
+            }
+            if (subjects.isEmpty()) {
                 subjectMappingFailed = true
-            } catch (exception: HttpException) {
-                Log.w(TAG, "Could not map subjects to BISAC for $isbn13", exception)
-                subjectMappingFailed = true
-            } catch (exception: JsonDataException) {
-                Log.w(TAG, "Could not parse BISAC subject response for $isbn13", exception)
-                subjectMappingFailed = true
-            } catch (exception: IllegalArgumentException) {
-                Log.w(TAG, "Local model returned invalid BISAC subjects for $isbn13", exception)
-                subjectMappingFailed = true
+            } else {
+                mappedBook = mappedBook.copy(
+                    subjects = subjects.joinToString("; "),
+                    dataSource = mappedBook.dataSource.withHomeChat(),
+                )
             }
         }
         // Runs after subject mapping, so subjects come from the source description.
@@ -161,15 +134,7 @@ class BookMetadataRepository(
                         dataSource = mappedBook.dataSource.withHomeChat(),
                     )
                 }
-            } catch (exception: CancellationException) {
-                throw exception
-            } catch (exception: IOException) {
-                descriptionFailed = true
-            } catch (exception: HttpException) {
-                descriptionFailed = true
-            } catch (exception: JsonDataException) {
-                descriptionFailed = true
-            } catch (exception: IllegalArgumentException) {
+            } catch (_: ModelException) {
                 descriptionFailed = true
             }
         }
@@ -189,47 +154,23 @@ class BookMetadataRepository(
         )
     }
 
-    private suspend fun fetchSafely(
-        source: BookMetadataSource,
-        isbn13: String,
-    ): SourceResult {
-        return try {
-            val result = withTimeoutOrNull(SOURCE_TIMEOUT_MS) {
-                SourceResult(metadata = source.fetch(isbn13), failed = false)
-            }
-            if (result == null) {
-                Log.w(TAG, "${source.name} lookup timed out for $isbn13")
-                SourceResult(metadata = null, failed = true)
-            } else {
-                result
-            }
+    /** Never throws for a failing source, so one source can't keep the others from being used. */
+    private suspend fun fetchSafely(source: BookMetadataSource, isbn13: String): SourceResult =
+        try {
+            withTimeoutOrNull(SOURCE_TIMEOUT_MS) { SourceResult(source.fetch(isbn13), failed = false) }
+                ?: SourceResult(null, failed = true).also { Log.w(TAG, "${source.name} lookup timed out for $isbn13") }
         } catch (exception: CancellationException) {
             throw exception
-        } catch (exception: IOException) {
-            logSourceFailure(source, isbn13, exception)
-            SourceResult(metadata = null, failed = true)
-        } catch (exception: HttpException) {
-            logSourceFailure(source, isbn13, exception)
-            SourceResult(metadata = null, failed = true)
-        } catch (exception: JsonDataException) {
-            logSourceFailure(source, isbn13, exception)
-            SourceResult(metadata = null, failed = true)
+        } catch (exception: Exception) {
+            Log.w(TAG, "${source.name} lookup failed for $isbn13", exception)
+            SourceResult(null, failed = true)
         }
-    }
-
-    private fun logSourceFailure(
-        source: BookMetadataSource,
-        isbn13: String,
-        exception: Exception,
-    ) {
-        Log.w(TAG, "${source.name} lookup failed for $isbn13", exception)
-    }
 
     private fun String?.withHomeChat(): String =
         if (orEmpty().split('+').contains("HomeChat")) this.orEmpty() else listOfNotNull(this, "HomeChat").joinToString("+")
 
     private fun emptyLookupBook(isbn13: String) =
-        com.example.bookcatalog.data.db.Book(
+        Book(
             isbn13 = isbn13,
             isbn10 = IsbnUtils.isbn13To10(isbn13),
             title = "",
