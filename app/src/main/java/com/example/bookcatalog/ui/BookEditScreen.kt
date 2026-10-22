@@ -52,11 +52,14 @@ import com.example.bookcatalog.data.db.Book
 import com.example.bookcatalog.data.covers.CoverStore
 import com.example.bookcatalog.data.covers.NormalizedCrop
 import com.example.bookcatalog.domain.TitleCase
+import com.squareup.moshi.JsonDataException
 import android.database.sqlite.SQLiteConstraintException
 import coil.compose.AsyncImage
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import retrofit2.HttpException
 import java.io.File
 import java.io.IOException
 import java.util.UUID
@@ -203,6 +206,9 @@ fun BookEditScreen(
     var showDeleteConfirmation by remember { mutableStateOf(false) }
     var formError by rememberSaveable(bookId) { mutableStateOf<String?>(null) }
     var coverError by rememberSaveable(bookId) { mutableStateOf<String?>(null) }
+    var subjectMappingMessage by rememberSaveable(bookId) { mutableStateOf<String?>(null) }
+    var subjectMappingFailed by rememberSaveable(bookId) { mutableStateOf(false) }
+    var isMappingSubjects by rememberSaveable(bookId) { mutableStateOf(false) }
     var captureFile by remember { mutableStateOf<File?>(null) }
     var captureUri by remember { mutableStateOf<android.net.Uri?>(null) }
     var cropBitmap by remember { mutableStateOf<Bitmap?>(null) }
@@ -462,6 +468,64 @@ fun BookEditScreen(
             )
             BookTextField("Language", draft.language, { draft = draft.copy(language = it) })
             BookTextField("Subjects (BISAC)", draft.subjects, { draft = draft.copy(subjects = it) })
+            Button(
+                onClick = {
+                    scope.launch {
+                        isMappingSubjects = true
+                        subjectMappingMessage = null
+                        subjectMappingFailed = false
+                        try {
+                            val subjects = viewModel.mapSubjectsToBisac(draft.toBook(originalBook))
+                            if (subjects.isEmpty()) {
+                                subjectMappingMessage =
+                                    "No confident BISAC classification was returned; subjects were left unchanged."
+                                subjectMappingFailed = true
+                            } else {
+                                draft = draft.copy(subjects = subjects.joinToString("; "))
+                                subjectMappingMessage = "Subjects mapped to BISAC."
+                            }
+                        } catch (exception: CancellationException) {
+                            throw exception
+                        } catch (exception: IOException) {
+                            subjectMappingMessage =
+                                "Could not map subjects to BISAC. Check the local model connection and try again."
+                            subjectMappingFailed = true
+                        } catch (exception: HttpException) {
+                            subjectMappingMessage =
+                                "Could not map subjects to BISAC. Check the local model connection and try again."
+                            subjectMappingFailed = true
+                        } catch (exception: JsonDataException) {
+                            subjectMappingMessage =
+                                "The local model returned an invalid BISAC response; subjects were left unchanged."
+                            subjectMappingFailed = true
+                        } catch (exception: IllegalArgumentException) {
+                            subjectMappingMessage =
+                                "The local model returned invalid BISAC subjects; subjects were left unchanged."
+                            subjectMappingFailed = true
+                        } catch (exception: IllegalStateException) {
+                            subjectMappingMessage = exception.message
+                                ?: "BISAC subject mapping is not configured."
+                            subjectMappingFailed = true
+                        } finally {
+                            isMappingSubjects = false
+                        }
+                    }
+                },
+                enabled = !isMappingSubjects,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(if (isMappingSubjects) "Mapping subjects…" else "Map subjects to BISAC")
+            }
+            subjectMappingMessage?.let {
+                Text(
+                    it,
+                    color = if (subjectMappingFailed) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                )
+            }
             BookTextField(
                 "Description",
                 draft.description,

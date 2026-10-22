@@ -28,10 +28,31 @@ class HomeChatBisacSubjectMapperTest {
     }
 
     @Test
+    fun acceptsJerusalemHistoryHeading() {
+        assertEquals(
+            listOf("HISTORY / Middle East / Israel & Palestine"),
+            HomeChatBisacSubjectMapper.parseSubjects(
+                """{"subjects":["HISTORY / Middle East / Israel & Palestine"]}""",
+                moshi,
+            ),
+        )
+    }
+
+    @Test
     fun rejectsHeadingsWithoutAtLeastTwoParts() {
         assertThrows(IllegalArgumentException::class.java) {
             HomeChatBisacSubjectMapper.parseSubjects(
                 """{"subjects":["MAJOR CATEGORY"]}""",
+                moshi,
+            )
+        }
+    }
+
+    @Test
+    fun rejectsHeadingWithNoncanonicalMajorHeadingCase() {
+        assertThrows(IllegalArgumentException::class.java) {
+            HomeChatBisacSubjectMapper.parseSubjects(
+                """{"subjects":["History / Middle East / General"]}""",
                 moshi,
             )
         }

@@ -18,6 +18,30 @@ class BookMetadataRepository(
     private val coverStore: CoverStore,
     private val subjectMapper: HomeChatBisacSubjectMapper? = null,
 ) {
+    suspend fun mapSubjectsToBisac(book: com.example.bookcatalog.data.db.Book): List<String> {
+        val mapper = subjectMapper
+            ?: throw IllegalStateException("BISAC subject mapping is not configured.")
+        return try {
+            withTimeoutOrNull(SUBJECT_MAPPING_TIMEOUT_MS) {
+                mapper.map(book)
+            } ?: throw IOException("BISAC subject mapping timed out.")
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: IOException) {
+            Log.w(TAG, "Could not map subjects to BISAC for ${book.isbn13}", exception)
+            throw exception
+        } catch (exception: HttpException) {
+            Log.w(TAG, "Could not map subjects to BISAC for ${book.isbn13}", exception)
+            throw exception
+        } catch (exception: JsonDataException) {
+            Log.w(TAG, "Could not parse BISAC subject response for ${book.isbn13}", exception)
+            throw exception
+        } catch (exception: IllegalArgumentException) {
+            Log.w(TAG, "Local model returned invalid BISAC subjects for ${book.isbn13}", exception)
+            throw exception
+        }
+    }
+
     suspend fun lookup(isbn13: String): MetadataLookupResult = supervisorScope {
         val openLibrary = sources.first { it.name == "OpenLibrary" }
         val googleBooks = sources.first { it.name == "Google" }
@@ -64,9 +88,7 @@ class BookMetadataRepository(
         var subjectMappingFailed = false
         if (subjectMapper != null) {
             try {
-                val subjects = withTimeoutOrNull(SUBJECT_MAPPING_TIMEOUT_MS) {
-                    subjectMapper.map(mappedBook)
-                }
+                val subjects = mapSubjectsToBisac(mappedBook)
                 if (subjects.isNullOrEmpty()) {
                     subjectMappingFailed = true
                 } else {

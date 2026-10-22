@@ -35,3 +35,4 @@ to that local endpoint. It stores the complete BISAC heading, including any
 official slash-separated qualifiers. If mapping fails, source subjects are kept
 and the edit screen shows a warning. The app allows cleartext traffic only to
 the configured LLM host when its URL uses HTTP.
+Existing books can be remapped from the edit screen with **Map subjects to BISAC**.

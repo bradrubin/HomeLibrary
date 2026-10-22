@@ -23,10 +23,16 @@ class LibraryViewModel(repository: BookRepository) : ViewModel() {
     }
 }
 
-class BookEditViewModel(private val repository: BookRepository) : ViewModel() {
+class BookEditViewModel(
+    private val repository: BookRepository,
+    private val metadataRepository: BookMetadataRepository,
+) : ViewModel() {
     suspend fun getBook(id: Long): Book? = repository.getBook(id)
 
     suspend fun save(book: Book): Long = repository.save(book)
+
+    suspend fun mapSubjectsToBisac(book: Book): List<String> =
+        metadataRepository.mapSubjectsToBisac(book)
 
     suspend fun delete(book: Book) {
         repository.delete(book)

@@ -127,7 +127,7 @@ private fun BookCatalogNavigation(
         ) { entry ->
             val viewModel: BookEditViewModel = viewModel(
                 factory = viewModelFactory {
-                    initializer { BookEditViewModel(repository) }
+                    initializer { BookEditViewModel(repository, metadataRepository) }
                 },
             )
             val bookId = entry.arguments?.getString("bookId")?.toLongOrNull()
