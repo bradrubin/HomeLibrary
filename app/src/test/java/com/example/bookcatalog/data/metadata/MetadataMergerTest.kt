@@ -37,7 +37,7 @@ class MetadataMergerTest {
         assertEquals("Open publisher", book.publisher)
         assertEquals("1999", book.publishedDate)
         assertEquals(240, book.pageCount)
-        assertEquals("en", book.language)
+        assertEquals("English", book.language)
         assertEquals("Google description", book.description)
         assertEquals("https://covers.example/open.jpg", book.coverSourceUrl)
         assertEquals("OpenLibrary+Google", book.dataSource)
@@ -54,6 +54,23 @@ class MetadataMergerTest {
         requireNotNull(book)
         assertEquals("Open Title", book.title)
         assertEquals("Doe, Jane", book.authors)
+    }
+
+    @Test
+    fun spellsOutLanguageAndDefaultsToEnglish() {
+        val italian = MetadataMerger.merge(
+            isbn13 = "9788893884938",
+            openLibrary = null,
+            googleBooks = BookMetadata(title = "Ci vuole gusto", language = "it"),
+        )
+        val unknown = MetadataMerger.merge(
+            isbn13 = "9780306406157",
+            openLibrary = BookMetadata(title = "Open title"),
+            googleBooks = null,
+        )
+
+        assertEquals("Italian", italian?.language)
+        assertEquals("English", unknown?.language)
     }
 
     @Test
@@ -116,7 +133,7 @@ class MetadataMergerTest {
         requireNotNull(book)
         assertEquals("Alex Michaelides", book.authors)
         assertEquals(325, book.pageCount)
-        assertEquals("en", book.language)
+        assertEquals("English", book.language)
         assertEquals("Marriage -- Fiction", book.subjects)
         assertEquals("Catalog summary", book.description)
         assertEquals("OpenLibrary+LibraryOfCongress", book.dataSource)

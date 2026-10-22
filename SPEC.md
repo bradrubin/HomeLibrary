@@ -47,7 +47,7 @@ Personal use, single user, sideloaded. No Play Store release, no accounts, no cl
 | `publishedDate` | String? | Publication year only, as four digits (e.g., `1999`). Sources return "1999", "1999-05", "May 1999", etc.; keep just the year. |
 | `pageCount` | Int? | |
 | `format` | String? | User field: `Hardcover` / `Softcover` / `Box set` / `Kindle` / `PDF` / `ePub` / `Audiobook` / `Other` |
-| `language` | String? | |
+| `language` | String? | Spelled out in English (e.g., `English`, `Italian`), not a code. Defaults to `English` when no source gives a language. |
 | `subjects` | String? | Joined with `; ` |
 | `description` | String? | |
 | `coverFile` | String? | Filename only (e.g., `9780385533225.jpg`), stored in app-internal `files/covers/` |

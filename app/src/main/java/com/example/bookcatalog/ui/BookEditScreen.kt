@@ -58,6 +58,7 @@ import com.example.bookcatalog.data.covers.CoverBoundaryDetector
 import com.example.bookcatalog.data.covers.NormalizedCrop
 import com.example.bookcatalog.data.metadata.ModelException
 import com.example.bookcatalog.domain.BookFormat
+import com.example.bookcatalog.domain.Language
 import com.example.bookcatalog.domain.PublicationYear
 import com.example.bookcatalog.domain.ReadStatus
 import com.example.bookcatalog.domain.TitleCase
@@ -81,7 +82,7 @@ private data class BookDraft(
     val publishedDate: String = "",
     val pageCount: String = "",
     val format: String = "",
-    val language: String = "",
+    val language: String = Language.DEFAULT,
     val subjects: String = "",
     val description: String = "",
     val location: String = "",

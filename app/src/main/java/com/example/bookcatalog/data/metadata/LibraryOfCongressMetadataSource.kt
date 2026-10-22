@@ -7,8 +7,6 @@ import org.xml.sax.InputSource
 import org.xml.sax.SAXException
 import java.io.IOException
 import java.io.InputStream
-import java.util.Locale
-import java.util.MissingResourceException
 import javax.xml.parsers.DocumentBuilderFactory
 import javax.xml.parsers.ParserConfigurationException
 
@@ -79,8 +77,7 @@ internal object ModsRecordParser {
                 .flatMap { it.children("languageTerm") }
                 .firstOrNull { it.getAttribute("type") == "code" }
                 ?.textContent
-                ?.trim()
-                ?.let(::toTwoLetterLanguage),
+                ?.trim(),
             subjects = subjects("lcsh"),
             bisacSubjects = subjects("bisacsh").take(MAX_BISAC_SUBJECTS),
             description = children("abstract").firstOrNull()?.textContent?.trim()?.takeIf(String::isNotBlank),
@@ -161,25 +158,6 @@ internal object ModsRecordParser {
         }
         return text.takeIf(String::isNotBlank)
     }
-
-    private fun toTwoLetterLanguage(code: String): String {
-        val terminologyCode = bibliographicToTerminology[code.lowercase()] ?: code.lowercase()
-        return Locale.getISOLanguages().firstOrNull { twoLetter ->
-            try {
-                Locale.forLanguageTag(twoLetter).isO3Language == terminologyCode
-            } catch (_: MissingResourceException) {
-                false
-            }
-        } ?: code
-    }
-
-    // MARC records use ISO 639-2/B codes; Java only knows the ISO 639-2/T forms.
-    private val bibliographicToTerminology = mapOf(
-        "alb" to "sqi", "arm" to "hye", "baq" to "eus", "bur" to "mya", "chi" to "zho",
-        "cze" to "ces", "dut" to "nld", "fre" to "fra", "geo" to "kat", "ger" to "deu",
-        "gre" to "ell", "ice" to "isl", "mac" to "mkd", "mao" to "mri", "may" to "msa",
-        "per" to "fas", "rum" to "ron", "slo" to "slk", "tib" to "bod", "wel" to "cym",
-    )
 
     private fun org.w3c.dom.NodeList.elements(): List<Element> =
         (0 until length).mapNotNull { item(it) as? Element }

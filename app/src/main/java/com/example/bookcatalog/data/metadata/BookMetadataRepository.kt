@@ -4,6 +4,7 @@ import android.util.Log
 import com.example.bookcatalog.data.covers.CoverStore
 import com.example.bookcatalog.data.db.Book
 import com.example.bookcatalog.domain.IsbnUtils
+import com.example.bookcatalog.domain.Language
 import com.squareup.moshi.JsonDataException
 import com.squareup.moshi.JsonEncodingException
 import kotlinx.coroutines.CancellationException
@@ -174,6 +175,7 @@ class BookMetadataRepository(
             isbn13 = isbn13,
             isbn10 = IsbnUtils.isbn13To10(isbn13),
             title = "",
+            language = Language.DEFAULT,
         )
 
     private data class SourceResult(

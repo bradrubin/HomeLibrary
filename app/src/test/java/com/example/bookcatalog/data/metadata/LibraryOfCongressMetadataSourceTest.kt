@@ -23,7 +23,7 @@ class LibraryOfCongressMetadataSourceTest {
         assertEquals("Celadon Books", result.publisher)
         assertEquals("2019", result.publishedDate)
         assertEquals(325, result.pageCount)
-        assertEquals("en", result.language)
+        assertEquals("eng", result.language)
         assertEquals(
             listOf("Family violence -- Fiction", "London (England) -- Fiction"),
             result.subjects,

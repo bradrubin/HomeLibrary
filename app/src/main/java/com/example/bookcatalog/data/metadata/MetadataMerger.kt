@@ -2,6 +2,7 @@ package com.example.bookcatalog.data.metadata
 
 import com.example.bookcatalog.data.db.Book
 import com.example.bookcatalog.domain.IsbnUtils
+import com.example.bookcatalog.domain.Language
 import com.example.bookcatalog.domain.PublicationYear
 import com.example.bookcatalog.domain.TitleCase
 
@@ -39,7 +40,7 @@ object MetadataMerger {
             publisher = open?.publisher ?: google?.publisher ?: loc?.publisher,
             publishedDate = publishedDate,
             pageCount = google?.pageCount ?: open?.pageCount ?: loc?.pageCount,
-            language = google?.language ?: loc?.language ?: open?.language,
+            language = Language.name(google?.language ?: loc?.language ?: open?.language) ?: Language.DEFAULT,
             // Publisher-supplied BISAC headings beat cataloged subjects, which beat retail categories.
             subjects = loc?.bisacSubjects.joined()
                 ?: loc?.subjects.joined()

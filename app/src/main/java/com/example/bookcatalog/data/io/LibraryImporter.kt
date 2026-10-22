@@ -3,6 +3,7 @@ package com.example.bookcatalog.data.io
 import com.example.bookcatalog.data.db.Book
 import com.example.bookcatalog.domain.BookFormat
 import com.example.bookcatalog.domain.IsbnUtils
+import com.example.bookcatalog.domain.Language
 import com.example.bookcatalog.domain.PublicationYear
 import com.example.bookcatalog.domain.ReadStatus
 import kotlinx.coroutines.CancellationException
@@ -258,7 +259,7 @@ class LibraryImporter(
             publishedDate = year(),
             pageCount = number(CsvColumn.PAGE_COUNT, "Page count", base.pageCount, 1..100_000),
             format = format(),
-            language = text(CsvColumn.LANGUAGE, base.language),
+            language = Language.name(text(CsvColumn.LANGUAGE, base.language)),
             subjects = text(CsvColumn.SUBJECTS, base.subjects),
             description = text(CsvColumn.DESCRIPTION, base.description),
             location = text(CsvColumn.LOCATION, base.location),
