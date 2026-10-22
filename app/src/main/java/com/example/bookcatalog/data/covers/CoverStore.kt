@@ -1,8 +1,10 @@
 package com.example.bookcatalog.data.covers
 
 import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.ImageDecoder
 import android.graphics.Matrix
+import android.graphics.Paint
 import android.os.Parcelable
 import android.util.Log
 import okhttp3.OkHttpClient
@@ -53,10 +55,22 @@ class CoverStore(
         return save(resize(decoded.bitmap), "$isbn13.jpg")
     }
 
-    /** Decodes a camera photo upright, since ImageDecoder applies its EXIF orientation. */
-    fun decodeForEditing(file: File, rotationDegrees: Float = 0f): Bitmap {
+    /**
+     * Decodes a camera photo upright, since ImageDecoder applies its EXIF orientation, then
+     * straightens it with [transform], which is in pixels of the decoded photo.
+     */
+    fun decodeForEditing(file: File, transform: PhotoTransform? = null): Bitmap {
         val photo = decode(ImageDecoder.createSource(file), EDITING_MAX_EDGE).bitmap
-        return rotate(photo, rotationDegrees).also { if (it !== photo) photo.recycle() }
+        return transform(photo, transform).also { if (it !== photo) photo.recycle() }
+    }
+
+    /** Draws the photo through [transform] into a new bitmap; the original is left to the caller. */
+    fun transform(bitmap: Bitmap, transform: PhotoTransform?): Bitmap {
+        if (transform == null || transform.isIdentity) return bitmap
+        val result = Bitmap.createBitmap(transform.width, transform.height, Bitmap.Config.ARGB_8888)
+        val matrix = Matrix().apply { setValues(transform.values) }
+        Canvas(result).drawBitmap(bitmap, matrix, Paint(Paint.FILTER_BITMAP_FLAG))
+        return result
     }
 
     /**
@@ -69,8 +83,8 @@ class CoverStore(
         return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
     }
 
-    fun saveUserPhoto(file: File, crop: NormalizedCrop, rotationDegrees: Float = 0f): String {
-        val source = decodeForEditing(file, rotationDegrees)
+    fun saveUserPhoto(file: File, crop: NormalizedCrop, transform: PhotoTransform? = null): String {
+        val source = decodeForEditing(file, transform)
         val left = (crop.left * source.width).toInt().coerceIn(0, source.width - 1)
         val top = (crop.top * source.height).toInt().coerceIn(0, source.height - 1)
         val right = (crop.right * source.width).toInt().coerceIn(left + 1, source.width)

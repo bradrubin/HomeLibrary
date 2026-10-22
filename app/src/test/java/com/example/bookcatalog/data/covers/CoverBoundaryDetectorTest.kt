@@ -6,6 +6,8 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.math.abs
+import kotlin.math.atan2
+import kotlin.math.hypot
 import kotlin.math.cos
 import kotlin.math.sin
 
@@ -17,7 +19,7 @@ class CoverBoundaryDetectorTest {
         }
 
         assertNotNull(detected)
-        assertEquals(0f, requireNotNull(detected).rotationDegrees)
+        assertEquals(0f, rotationDegrees(requireNotNull(detected)))
         val crop = detected.crop
         assertEquals(0.2f, crop.left, 0.02f)
         assertEquals(0.1f, crop.top, 0.02f)
@@ -62,7 +64,7 @@ class CoverBoundaryDetectorTest {
         }
 
         requireNotNull(detected)
-        assertEquals(-3f, detected.rotationDegrees, 0.3f)
+        assertEquals(-3f, rotationDegrees(detected), 0.3f)
         // Turned back 3 degrees the photo is about 1282x1661, with the 700x1050 book centered.
         assertEquals(0.227f, detected.crop.left, 0.02f)
         assertEquals(0.184f, detected.crop.top, 0.02f)
@@ -77,7 +79,7 @@ class CoverBoundaryDetectorTest {
         }
 
         requireNotNull(detected)
-        assertEquals(8f, detected.rotationDegrees, 0.5f)
+        assertEquals(8f, rotationDegrees(detected), 0.5f)
         // Turned forward 8 degrees the photo is about 1411x1751, with the 700x1050 book centered.
         assertEquals(0.252f, detected.crop.left, 0.02f)
         assertEquals(0.200f, detected.crop.top, 0.02f)
@@ -93,11 +95,45 @@ class CoverBoundaryDetectorTest {
         }
 
         requireNotNull(detected)
-        assertEquals(90f, detected.rotationDegrees)
+        assertEquals(90f, rotationDegrees(detected), 0.01f)
         assertEquals(0.2f, detected.crop.left, 0.02f)
         assertEquals(0.1f, detected.crop.top, 0.02f)
         assertEquals(0.8f, detected.crop.right, 0.02f)
         assertEquals(0.9f, detected.crop.bottom, 0.02f)
+    }
+
+    @Test
+    fun squaresUpKeystonedBook() {
+        // Taken from below the book's center, so its top edge looks narrower than its bottom.
+        val corners = listOf(380.0 to 300.0, 820.0 to 300.0, 860.0 to 1300.0, 340.0 to 1300.0)
+        val detected = CoverBoundaryDetector.detect(1200, 1600) { x, y ->
+            quadBook(x, y, corners, background = LIGHT, book = PURPLE)
+        }
+
+        requireNotNull(detected)
+        val transform = detected.transform
+        assertTrue("expected a perspective correction", transform.values[6] != 0f || transform.values[7] != 0f)
+        val crop = detected.crop
+        val expected = listOf(crop.left to crop.top, crop.right to crop.top, crop.right to crop.bottom, crop.left to crop.bottom)
+        corners.zip(expected).forEach { (corner, cropCorner) ->
+            val (x, y) = transform.map(corner.first.toFloat(), corner.second.toFloat())
+            assertEquals(cropCorner.first, x / transform.width, 0.02f)
+            assertEquals(cropCorner.second, y / transform.height, 0.02f)
+        }
+        // Averaging opposite sides gives 460 by 1001 pixels; each side leans a few pixels outward
+        // so the cover is never clipped, which widens the narrow side most.
+        val aspect = (crop.right - crop.left) * transform.width / ((crop.bottom - crop.top) * transform.height)
+        assertEquals(0.46f, aspect, 0.04f)
+    }
+
+    @Test
+    fun onlyRotatesWhenKeystoneIsTooStrongToTrust() {
+        val corners = listOf(450.0 to 300.0, 750.0 to 300.0, 926.0 to 1300.0, 274.0 to 1300.0)
+        val detected = CoverBoundaryDetector.detect(1200, 1600) { x, y ->
+            quadBook(x, y, corners, background = LIGHT, book = PURPLE)
+        }
+
+        assertTrue(detected == null || (detected.transform.values[6] == 0f && detected.transform.values[7] == 0f))
     }
 
     @Test
@@ -141,6 +177,26 @@ class CoverBoundaryDetectorTest {
         val u = dx * cos(angle) + dy * sin(angle)
         val v = -dx * sin(angle) + dy * cos(angle)
         val outside = maxOf(abs(u) - 350, abs(v) - 525)
+        return blend(background, book, ((4 - outside) / 8).coerceIn(0.0, 1.0))
+    }
+
+    /** The straightening angle, for transforms that only rotate. */
+    private fun rotationDegrees(detected: DetectedCover): Float {
+        val values = detected.transform.values
+        assertEquals(0f, values[6])
+        assertEquals(0f, values[7])
+        return Math.toDegrees(atan2(values[3].toDouble(), values[0].toDouble())).toFloat()
+    }
+
+    /** A book with the given corners, clockwise from top left, and a soft edge. */
+    private fun quadBook(x: Int, y: Int, corners: List<Pair<Double, Double>>, background: Int, book: Int): Int {
+        // Distance outside the quadrilateral: the largest signed distance past any edge.
+        val outside = corners.indices.maxOf { index ->
+            val (x1, y1) = corners[index]
+            val (x2, y2) = corners[(index + 1) % corners.size]
+            val length = hypot(x2 - x1, y2 - y1)
+            ((x - x1) * (y2 - y1) - (y - y1) * (x2 - x1)) / length
+        }
         return blend(background, book, ((4 - outside) / 8).coerceIn(0.0, 1.0))
     }
 

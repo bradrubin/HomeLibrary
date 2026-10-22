@@ -52,6 +52,7 @@ import com.example.bookcatalog.data.db.Book
 import com.example.bookcatalog.data.covers.CoverStore
 import com.example.bookcatalog.data.covers.CoverBoundaryDetector
 import com.example.bookcatalog.data.covers.NormalizedCrop
+import com.example.bookcatalog.data.covers.PhotoTransform
 import com.example.bookcatalog.data.metadata.ModelException
 import com.example.bookcatalog.domain.BookFormat
 import com.example.bookcatalog.domain.Language
@@ -179,7 +180,7 @@ fun BookEditScreen(
     var showCamera by rememberSaveable { mutableStateOf(false) }
     var cropping by rememberSaveable { mutableStateOf(false) }
     var detectedCrop by rememberSaveable { mutableStateOf<NormalizedCrop?>(null) }
-    var cropRotation by rememberSaveable { mutableStateOf(0f) }
+    var cropTransform by rememberSaveable { mutableStateOf<PhotoTransform?>(null) }
     var cropBitmap by remember { mutableStateOf<Bitmap?>(null) }
     // Kept from the first composition, since the lookup that produced them isn't saved.
     val lookupNotice by rememberSaveable(bookId) { mutableStateOf(lookupMessage) }
@@ -217,12 +218,12 @@ fun BookEditScreen(
                 val detected = withContext(Dispatchers.Default) {
                     CoverBoundaryDetector.detect(photo)
                 }
-                val rotation = detected?.rotationDegrees ?: 0f
+                val transform = detected?.transform ?: PhotoTransform.identity(photo.width, photo.height)
                 cropBitmap = withContext(Dispatchers.Default) {
-                    coverStore.rotate(photo, rotation).also { if (it !== photo) photo.recycle() }
+                    coverStore.transform(photo, transform).also { if (it !== photo) photo.recycle() }
                 }
                 detectedCrop = detected?.crop
-                cropRotation = rotation
+                cropTransform = transform
                 cropping = true
             } catch (exception: IOException) {
                 Log.e(TAG, "Could not load captured cover photo", exception)
@@ -236,7 +237,7 @@ fun BookEditScreen(
         cropBitmap = null
         cropping = false
         detectedCrop = null
-        cropRotation = 0f
+        cropTransform = null
         captureFile?.delete()
         captureFile = null
     }
@@ -246,7 +247,7 @@ fun BookEditScreen(
         val source = captureFile
         if (cropping && cropBitmap == null && source != null) {
             try {
-                cropBitmap = withContext(Dispatchers.IO) { coverStore.decodeForEditing(source, cropRotation) }
+                cropBitmap = withContext(Dispatchers.IO) { coverStore.decodeForEditing(source, cropTransform) }
             } catch (exception: IOException) {
                 Log.e(TAG, "Could not reload cover photo", exception)
                 coverError = "The photo couldn't be opened. Please take another photo."
@@ -262,7 +263,7 @@ fun BookEditScreen(
             // The old bitmap may still be drawing, so it is left for the garbage collector.
             cropBitmap = rotated
             detectedCrop = crop
-            cropRotation = (cropRotation + 90f) % 360f
+            cropTransform = cropTransform?.thenRotateClockwise()
         }
     }
 
@@ -271,7 +272,7 @@ fun BookEditScreen(
         scope.launch {
             try {
                 val newCover = withContext(Dispatchers.IO) {
-                    coverStore.saveUserPhoto(source, crop, cropRotation)
+                    coverStore.saveUserPhoto(source, crop, cropTransform)
                 }
                 draft = draft.copy(coverFile = newCover, coverSourceUrl = "user-photo")
                 coverError = null
@@ -279,7 +280,7 @@ fun BookEditScreen(
                 cropBitmap = null
                 cropping = false
                 detectedCrop = null
-                cropRotation = 0f
+                cropTransform = null
                 source.delete()
                 captureFile = null
             } catch (exception: IOException) {

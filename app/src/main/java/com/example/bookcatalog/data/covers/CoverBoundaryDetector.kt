@@ -9,12 +9,12 @@ import kotlin.math.max
 import kotlin.math.sin
 
 /**
- * A detected cover: rotate the photo clockwise by [rotationDegrees], then crop it to [crop]. A
- * book found on its side is guessed to need a quarter turn clockwise, which may be the wrong way.
+ * A detected cover: straighten the photo with [transform], then crop it to [crop]. A book found
+ * on its side is guessed to need a quarter turn clockwise, which may be the wrong way.
  */
-internal data class DetectedCover(
+internal class DetectedCover(
     val crop: NormalizedCrop,
-    val rotationDegrees: Float,
+    val transform: PhotoTransform,
 )
 
 /**
@@ -22,8 +22,9 @@ internal data class DetectedCover(
  *
  * The photo is shrunk so blur and sensor noise average out, the background is grown inward from
  * the photo's border through gradual color changes, and the largest remaining region is accepted
- * when it is shaped like a cover. The tilt of its edges gives the rotation that straightens the
- * book, and the crop is the book's box in the straightened photo.
+ * when it is shaped like a cover. Its edges give the rotation that straightens the book, or, when
+ * opposite edges converge because the photo was taken at a slight angle, the four corners that
+ * square it up. The crop is the book's box in the straightened photo.
  */
 internal object CoverBoundaryDetector {
     fun detect(bitmap: Bitmap): DetectedCover? {
@@ -48,8 +49,11 @@ internal object CoverBoundaryDetector {
             centerY = imageHeight / 2f / image.block,
         )
 
-        val regionWidth = placement.right - placement.left
-        val regionHeight = placement.bottom - placement.top
+        var straightened = placement.quad?.let { squareUp(it, image.block, imageWidth, imageHeight) }
+            ?: rotate(placement, image.block, imageWidth, imageHeight)
+
+        val regionWidth = straightened.right - straightened.left
+        val regionHeight = straightened.bottom - straightened.top
         if (regionWidth <= 0 || regionHeight <= 0) return null
         // A book lying on its side in a landscape photo usually means the camera guessed the
         // wrong orientation, which happens when the phone is held flat over the book.
@@ -61,43 +65,79 @@ internal object CoverBoundaryDetector {
             MIN_WIDTH_RATIO to MIN_HEIGHT_RATIO
         }
         // Measured against the straightened box, so tilted books still count as solid rectangles.
-        val fill = found.pixelCount / (regionWidth * regionHeight)
-        if (regionWidth < image.width * acrossRatio ||
-            regionHeight < image.height * downRatio ||
+        val fill = found.pixelCount * image.block * image.block / (regionWidth * regionHeight)
+        if (regionWidth < imageWidth * acrossRatio ||
+            regionHeight < imageHeight * downRatio ||
             aspectRatio !in MIN_COVER_ASPECT..MAX_COVER_ASPECT ||
             fill < MIN_FILL_RATIO
         ) {
             return null
         }
-        // Size of the photo once rotated, matching the bounds Bitmap.createBitmap gives it.
-        val cos = abs(cos(placement.tilt))
-        val sin = abs(sin(placement.tilt))
-        var rotatedWidth = imageWidth * cos + imageHeight * sin
-        var rotatedHeight = imageWidth * sin + imageHeight * cos
-        var left = placement.left
-        var top = placement.top
-        var right = placement.right
-        var bottom = placement.bottom
-        var rotationDegrees = if (placement.tilt == 0f) 0f else -Math.toDegrees(placement.tilt.toDouble()).toFloat()
         if (sideways) {
             // Guess a further quarter turn clockwise, which moves each side one place around.
-            rotatedWidth = rotatedHeight.also { rotatedHeight = rotatedWidth }
-            left = -placement.bottom
-            top = placement.left
-            right = -placement.top
-            bottom = placement.right
-            rotationDegrees += 90f
+            val height = straightened.transform.height
+            straightened = Straightened(
+                transform = straightened.transform.thenRotateClockwise(),
+                left = height - straightened.bottom,
+                top = straightened.left,
+                right = height - straightened.top,
+                bottom = straightened.right,
+            )
         }
-        fun normalizedX(x: Float) = ((rotatedWidth / 2 + x * image.block) / rotatedWidth).coerceIn(0f, 1f)
-        fun normalizedY(y: Float) = ((rotatedHeight / 2 + y * image.block) / rotatedHeight).coerceIn(0f, 1f)
+        val width = straightened.transform.width.toFloat()
+        val height = straightened.transform.height.toFloat()
         return DetectedCover(
             crop = NormalizedCrop(
-                left = normalizedX(left),
-                top = normalizedY(top),
-                right = normalizedX(right),
-                bottom = normalizedY(bottom),
+                left = (straightened.left / width).coerceIn(0f, 1f),
+                top = (straightened.top / height).coerceIn(0f, 1f),
+                right = (straightened.right / width).coerceIn(0f, 1f),
+                bottom = (straightened.bottom / height).coerceIn(0f, 1f),
             ),
-            rotationDegrees = rotationDegrees,
+            transform = straightened.transform,
+        )
+    }
+
+    /** Rotates by the measured tilt; the placement's sides are already measured square to it. */
+    private fun rotate(placement: Placement, block: Int, imageWidth: Int, imageHeight: Int): Straightened {
+        val degrees = if (placement.tilt == 0f) 0f else -Math.toDegrees(placement.tilt.toDouble()).toFloat()
+        val transform = PhotoTransform.rotation(degrees, imageWidth, imageHeight)
+        // The sides are measured from the photo's center, which the rotation keeps centered.
+        return Straightened(
+            transform = transform,
+            left = transform.width / 2f + placement.left * block,
+            top = transform.height / 2f + placement.top * block,
+            right = transform.width / 2f + placement.right * block,
+            bottom = transform.height / 2f + placement.bottom * block,
+        )
+    }
+
+    /**
+     * Maps the cover's corners onto a rectangle as wide as its top and bottom edges average and
+     * as tall as its sides average. That is exact only for a gentle angle, which is all
+     * [refineEdges] passes on. Returns null when the photo would distort too much.
+     */
+    private fun squareUp(quad: List<Pair<Float, Float>>, block: Int, imageWidth: Int, imageHeight: Int): Straightened? {
+        val corners = quad.map { (x, y) -> x.toDouble() * block to y.toDouble() * block }
+        fun distance(a: Int, b: Int) = Math.hypot(corners[a].first - corners[b].first, corners[a].second - corners[b].second)
+        val width = (distance(0, 1) + distance(3, 2)) / 2
+        val height = (distance(0, 3) + distance(1, 2)) / 2
+        val centerX = corners.sumOf { it.first } / 4
+        val centerY = corners.sumOf { it.second } / 4
+        val target = listOf(
+            centerX - width / 2 to centerY - height / 2,
+            centerX + width / 2 to centerY - height / 2,
+            centerX + width / 2 to centerY + height / 2,
+            centerX - width / 2 to centerY + height / 2,
+        )
+        val transform = PhotoTransform.perspective(corners, target, imageWidth, imageHeight) ?: return null
+        // The corners land on the target rectangle, moved along with the rest of the photo.
+        val mapped = corners.map { (x, y) -> transform.map(x.toFloat(), y.toFloat()) }
+        return Straightened(
+            transform = transform,
+            left = mapped.minOf { it.first },
+            top = mapped.minOf { it.second },
+            right = mapped.maxOf { it.first },
+            bottom = mapped.maxOf { it.second },
         )
     }
 
@@ -344,14 +384,17 @@ internal object CoverBoundaryDetector {
         val bottom = sidePositions(columns, (region.bottom + 1).coerceAtMost(maxY), (region.bottom - 1 - bandY).coerceAtLeast(0), image.height) { x, y -> at(x, y) }
             .takeIf { it.size >= columns.count() * MIN_EDGE_LINE_SHARE }
 
+        val leftSlope = left?.let(::slope)
+        val rightSlope = right?.let(::slope)
+        val topSlope = top?.let(::slope)
+        val bottomSlope = bottom?.let(::slope)
         // A clockwise tilt moves the left and right sides left going down, and the top and
         // bottom sides down going right.
-        val sideTilts = listOfNotNull(
-            left?.let(::slope)?.let { atan(-it) },
-            right?.let(::slope)?.let { atan(-it) },
-            top?.let(::slope)?.let { atan(it) },
-            bottom?.let(::slope)?.let { atan(it) },
-        ).sorted()
+        val leftTilt = leftSlope?.let { atan(-it) }
+        val rightTilt = rightSlope?.let { atan(-it) }
+        val topTilt = topSlope?.let { atan(it) }
+        val bottomTilt = bottomSlope?.let { atan(it) }
+        val sideTilts = listOfNotNull(leftTilt, rightTilt, topTilt, bottomTilt).sorted()
         val measuredTilt = when {
             sideTilts.isEmpty() -> 0f
             sideTilts.size % 2 == 1 -> sideTilts[sideTilts.size / 2]
@@ -359,18 +402,49 @@ internal object CoverBoundaryDetector {
         }
         val tilt = if (abs(measuredTilt) in MIN_TILT..MAX_TILT) measuredTilt else 0f
 
-        // Positions across and down the straightened photo, relative to its center.
-        val cos = cos(tilt)
-        val sin = sin(tilt)
-        fun straightX(x: Float, y: Float) = (x - centerX) * cos + (y - centerY) * sin
-        fun straightY(x: Float, y: Float) = -(x - centerX) * sin + (y - centerY) * cos
-
         fun refined(positions: List<Float>?, fallback: Float, outward: Boolean): Float {
             if (positions == null) return fallback
             val sorted = positions.sorted()
             val index = (sorted.size * EDGE_PERCENTILE).toInt()
             return if (outward) sorted[sorted.size - 1 - index] else sorted[index]
         }
+
+        // Converging opposite sides mean a keystoned photo. Only a gentle keystone is squared
+        // up, since a wrongly measured side would distort the cover worse than leaving it.
+        val keystoned = leftTilt != null && rightTilt != null && topTilt != null && bottomTilt != null &&
+            (abs(leftTilt - rightTilt) > MIN_KEYSTONE || abs(topTilt - bottomTilt) > MIN_KEYSTONE) &&
+            abs(measuredTilt) <= MAX_TILT &&
+            sideTilts.all { abs(it - measuredTilt) <= MAX_KEYSTONE }
+        val quad = if (keystoned) {
+            // Each side as a line, placed at its outermost tenth like the rotated sides.
+            fun intercept(points: List<EdgePoint>?, slope: Float?, outward: Boolean) =
+                refined(points!!.map { it.across - slope!! * it.along }, 0f, outward)
+            val leftLine = intercept(left, leftSlope, outward = false) to leftSlope!!
+            val rightLine = intercept(right, rightSlope, outward = true) to rightSlope!!
+            val topLine = intercept(top, topSlope, outward = false) to topSlope!!
+            val bottomLine = intercept(bottom, bottomSlope, outward = true) to bottomSlope!!
+            // Where x = a + b·y meets y = c + d·x.
+            fun corner(vertical: Pair<Float, Float>, horizontal: Pair<Float, Float>): Pair<Float, Float> {
+                val (a, b) = vertical
+                val (c, d) = horizontal
+                val x = (a + b * c) / (1 - b * d)
+                return x to c + d * x
+            }
+            listOf(
+                corner(leftLine, topLine),
+                corner(rightLine, topLine),
+                corner(rightLine, bottomLine),
+                corner(leftLine, bottomLine),
+            )
+        } else {
+            null
+        }
+
+        // Positions across and down the straightened photo, relative to its center.
+        val cos = cos(tilt)
+        val sin = sin(tilt)
+        fun straightX(x: Float, y: Float) = (x - centerX) * cos + (y - centerY) * sin
+        fun straightY(x: Float, y: Float) = -(x - centerX) * sin + (y - centerY) * cos
 
         val corners = listOf(
             region.left to region.top,
@@ -400,6 +474,7 @@ internal object CoverBoundaryDetector {
                 outward = true,
             ),
             tilt = tilt,
+            quad = quad,
         )
     }
 
@@ -449,6 +524,17 @@ internal object CoverBoundaryDetector {
         val right: Float,
         val bottom: Float,
         val tilt: Float,
+        /** The cover's corners, clockwise from top left, when the photo is keystoned. */
+        val quad: List<Pair<Float, Float>>?,
+    )
+
+    /** A straightening transform and the cover's box, in pixels of the straightened photo. */
+    private class Straightened(
+        val transform: PhotoTransform,
+        val left: Float,
+        val top: Float,
+        val right: Float,
+        val bottom: Float,
     )
 
     private const val MIN_IMAGE_EDGE = 80
@@ -476,4 +562,9 @@ internal object CoverBoundaryDetector {
     // Tilts below about half a degree aren't visible; beyond 15 degrees the edge search is unreliable.
     private const val MIN_TILT = 0.008f
     private const val MAX_TILT = 0.26f
+
+    // Opposite sides converging by over half a degree are squared up, if no side is more than
+    // six degrees off the overall tilt.
+    private const val MIN_KEYSTONE = 0.008f
+    private const val MAX_KEYSTONE = 0.105f
 }
