@@ -125,6 +125,9 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.play.services.code.scanner)
     implementation(libs.commons.csv)
+    implementation(libs.androidx.camera.camera2)
+    implementation(libs.androidx.camera.lifecycle)
+    implementation(libs.androidx.camera.view)
 
     debugImplementation(libs.androidx.compose.ui.tooling)
     testImplementation(libs.junit)

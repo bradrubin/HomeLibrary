@@ -2,7 +2,6 @@ package com.example.bookcatalog.ui
 
 import android.graphics.Bitmap
 import android.os.Parcelable
-import android.content.ActivityNotFoundException
 import android.util.Log
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -49,9 +48,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.core.content.FileProvider
 import com.example.bookcatalog.data.db.Book
 import com.example.bookcatalog.data.covers.CoverStore
 import com.example.bookcatalog.data.covers.CoverBoundaryDetector
@@ -180,6 +176,7 @@ fun BookEditScreen(
     var runningTask by remember { mutableStateOf<ModelTask?>(null) }
     // Saved, so a photo survives the screen being recreated while the camera or cropper is open.
     var captureFile by rememberSaveable(stateSaver = FileSaver) { mutableStateOf<File?>(null) }
+    var showCamera by rememberSaveable { mutableStateOf(false) }
     var cropping by rememberSaveable { mutableStateOf(false) }
     var detectedCrop by rememberSaveable { mutableStateOf<NormalizedCrop?>(null) }
     var cropRotation by rememberSaveable { mutableStateOf(0f) }
@@ -189,62 +186,48 @@ fun BookEditScreen(
     val lookupProblem by rememberSaveable(bookId) { mutableStateOf(lookupWarning) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val cameraLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.TakePicture(),
-    ) { captured ->
-        val source = captureFile
-        if (captured && source != null) {
-            scope.launch {
-                try {
-                    val photo = withContext(Dispatchers.IO) { coverStore.decodeForEditing(source) }
-                    val detected = withContext(Dispatchers.Default) {
-                        CoverBoundaryDetector.detect(photo)
-                    }
-                    val rotation = detected?.rotationDegrees ?: 0f
-                    cropBitmap = withContext(Dispatchers.Default) {
-                        coverStore.rotate(photo, rotation).also { if (it !== photo) photo.recycle() }
-                    }
-                    detectedCrop = detected?.crop
-                    cropRotation = rotation
-                    cropping = true
-                } catch (exception: IOException) {
-                    Log.e(TAG, "Could not load captured cover photo", exception)
-                    coverError = "The photo couldn't be opened. Please take another photo."
-                    source.delete()
-                    captureFile = null
-                }
-            }
-        } else {
-            source?.delete()
-            captureFile = null
-        }
-    }
 
     fun takeCoverPhoto() {
         try {
             val cameraDirectory = File(context.cacheDir, "camera-photos").apply {
                 if (!exists() && !mkdirs()) throw IOException("Could not create camera folder")
             }
-            val file = File(cameraDirectory, "cover-${UUID.randomUUID()}.jpg")
-            if (!file.createNewFile()) throw IOException("Could not create camera photo")
-            captureFile = file
-            val uri = FileProvider.getUriForFile(
-                context,
-                "${context.packageName}.fileprovider",
-                file,
-            )
+            captureFile = File(cameraDirectory, "cover-${UUID.randomUUID()}.jpg")
             coverError = null
-            cameraLauncher.launch(uri)
-        } catch (exception: Exception) {
-            if (exception !is IOException && exception !is IllegalArgumentException &&
-                exception !is ActivityNotFoundException
-            ) {
-                throw exception
-            }
+            showCamera = true
+        } catch (exception: IOException) {
             Log.e(TAG, "Could not prepare cover photo capture", exception)
-            captureFile?.delete()
-            captureFile = null
             coverError = "Couldn't prepare the camera. Please try again."
+        }
+    }
+
+    fun closeCamera(error: String? = null) {
+        showCamera = false
+        captureFile?.delete()
+        captureFile = null
+        coverError = error
+    }
+
+    fun onPhotoCaptured() {
+        showCamera = false
+        val source = captureFile ?: return
+        scope.launch {
+            try {
+                val photo = withContext(Dispatchers.IO) { coverStore.decodeForEditing(source) }
+                val detected = withContext(Dispatchers.Default) {
+                    CoverBoundaryDetector.detect(photo)
+                }
+                val rotation = detected?.rotationDegrees ?: 0f
+                cropBitmap = withContext(Dispatchers.Default) {
+                    coverStore.rotate(photo, rotation).also { if (it !== photo) photo.recycle() }
+                }
+                detectedCrop = detected?.crop
+                cropRotation = rotation
+                cropping = true
+            } catch (exception: IOException) {
+                Log.e(TAG, "Could not load captured cover photo", exception)
+                closeCamera("The photo couldn't be opened. Please take another photo.")
+            }
         }
     }
 
@@ -333,6 +316,16 @@ fun BookEditScreen(
             originalBook = initialBook
         }
         initialized = true
+    }
+
+    captureFile?.takeIf { showCamera }?.let { file ->
+        CameraCaptureScreen(
+            outputFile = file,
+            onCaptured = ::onPhotoCaptured,
+            onCancel = { closeCamera() },
+            onError = ::closeCamera,
+        )
+        return
     }
 
     cropBitmap?.let { bitmap ->
