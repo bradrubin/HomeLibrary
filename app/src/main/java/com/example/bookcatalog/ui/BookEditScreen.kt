@@ -50,6 +50,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.FileProvider
 import com.example.bookcatalog.data.db.Book
 import com.example.bookcatalog.data.covers.CoverStore
+import com.example.bookcatalog.data.covers.CoverBoundaryDetector
 import com.example.bookcatalog.data.covers.NormalizedCrop
 import com.example.bookcatalog.domain.TitleCase
 import com.squareup.moshi.JsonDataException
@@ -212,6 +213,7 @@ fun BookEditScreen(
     var captureFile by remember { mutableStateOf<File?>(null) }
     var captureUri by remember { mutableStateOf<android.net.Uri?>(null) }
     var cropBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var detectedCrop by remember { mutableStateOf<NormalizedCrop?>(null) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val cameraLauncher = rememberLauncherForActivityResult(
@@ -221,9 +223,14 @@ fun BookEditScreen(
         if (captured && source != null) {
             scope.launch {
                 try {
-                    cropBitmap = withContext(Dispatchers.IO) {
+                    val bitmap = withContext(Dispatchers.IO) {
                         requireNotNull(coverStore).decodeForEditing(source)
                     }
+                    val crop = withContext(Dispatchers.Default) {
+                        CoverBoundaryDetector.detect(bitmap)
+                    }
+                    cropBitmap = bitmap
+                    detectedCrop = crop
                 } catch (exception: IOException) {
                     Log.e(TAG, "Could not load captured cover photo", exception)
                     coverError = "The photo couldn't be opened. Please take another photo."
@@ -287,6 +294,7 @@ fun BookEditScreen(
     fun cancelCrop() {
         cropBitmap?.recycle()
         cropBitmap = null
+        detectedCrop = null
         captureFile?.delete()
         captureFile = null
         captureUri = null
@@ -304,6 +312,7 @@ fun BookEditScreen(
                 coverError = null
                 cropBitmap?.recycle()
                 cropBitmap = null
+                detectedCrop = null
                 source.delete()
                 captureFile = null
                 captureUri = null
@@ -332,6 +341,7 @@ fun BookEditScreen(
     cropBitmap?.let { bitmap ->
         CropPhotoScreen(
             bitmap = bitmap,
+            initialCrop = detectedCrop,
             onUseCrop = ::useCrop,
             onCancel = ::cancelCrop,
         )

@@ -53,13 +53,17 @@ private data class CropSelection(
 @OptIn(ExperimentalMaterial3Api::class)
 fun CropPhotoScreen(
     bitmap: Bitmap,
+    initialCrop: NormalizedCrop?,
     onUseCrop: (NormalizedCrop) -> Unit,
     onCancel: () -> Unit,
 ) {
     BackHandler(onBack = onCancel)
     val handleColor = MaterialTheme.colorScheme.primary
     var selection by remember(bitmap) {
-        mutableStateOf(CropSelection(0.05f, 0.05f, 0.95f, 0.95f))
+        mutableStateOf(
+            initialCrop?.let { CropSelection(it.left, it.top, it.right, it.bottom) }
+                ?: CropSelection(0.05f, 0.05f, 0.95f, 0.95f),
+        )
     }
 
     Scaffold(
@@ -100,7 +104,11 @@ fun CropPhotoScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(
-                "Drag the corners to fit the book cover. Drag inside the frame to move it.",
+                if (initialCrop == null) {
+                    "Couldn’t detect the cover edges confidently. Drag the corners to fit the cover."
+                } else {
+                    "We found the cover edges. Adjust the frame if needed."
+                },
                 style = MaterialTheme.typography.bodyMedium,
             )
             BoxWithConstraints(

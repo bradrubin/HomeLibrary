@@ -36,3 +36,5 @@ official slash-separated qualifiers. If mapping fails, source subjects are kept
 and the edit screen shows a warning. The app allows cleartext traffic only to
 the configured LLM host when its URL uses HTTP.
 Existing books can be remapped from the edit screen with **Map subjects to BISAC**.
+When taking a cover photo, the app detects a likely book-cover rectangle on-device.
+The crop remains adjustable, and low-confidence detection falls back to the manual frame.
