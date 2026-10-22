@@ -216,7 +216,7 @@ app/src/main/java/com/example/bookcatalog/
 3. **Scanning:** barcode scan flow, duplicate detection.
 4. **Batch scanning (nice to have):** "scan many" mode — scan several books in a row, queue lookups, then review the list and save all.
 5. **Import/Export:** CSV and ZIP, both directions, with conflict handling and summary.
-6. **Polish:** search/sort, grid view, take/choose cover photo, settings, about/attribution, unit and round-trip tests passing.
+6. **Polish:** search/sort, grid view, bulk select/deselect with individual mark/unmark for delete and export, unit and round-trip tests passing.
 
 At the end of each milestone, summarize what was built, how to run it, and anything that deviated from this spec.
 
