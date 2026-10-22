@@ -46,6 +46,7 @@ Personal use, single user, sideloaded. No Play Store release, no accounts, no cl
 | `publisher` | String? | |
 | `publishedDate` | String? | Publication year only, as four digits (e.g., `1999`). Sources return "1999", "1999-05", "May 1999", etc.; keep just the year. |
 | `pageCount` | Int? | |
+| `format` | String? | User field: `Hardcover` / `Softcover` / `Box set` / `Kindle` / `PDF` / `ePub` / `Audiobook` / `Other` |
 | `language` | String? | |
 | `subjects` | String? | Joined with `; ` |
 | `description` | String? | |
@@ -143,7 +144,7 @@ Show "Book data and covers courtesy of Open Library and Google Books" on the Abo
 - Columns, in this order:
 
 ```
-isbn13,isbn10,title,subtitle,authors,publisher,published_date,page_count,language,subjects,description,location,notes,rating,read_status,date_added,cover_file,cover_source_url
+isbn13,isbn10,title,subtitle,authors,publisher,published_date,page_count,format,language,subjects,description,location,notes,rating,read_status,date_added,cover_file,cover_source_url
 ```
 
 - `date_added` as ISO-8601 (`2026-10-21`).

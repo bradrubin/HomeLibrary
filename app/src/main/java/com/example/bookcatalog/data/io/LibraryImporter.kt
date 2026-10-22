@@ -1,6 +1,7 @@
 package com.example.bookcatalog.data.io
 
 import com.example.bookcatalog.data.db.Book
+import com.example.bookcatalog.domain.BookFormat
 import com.example.bookcatalog.domain.IsbnUtils
 import com.example.bookcatalog.domain.PublicationYear
 import kotlinx.coroutines.CancellationException
@@ -226,6 +227,14 @@ class LibraryImporter(
             }
         }
 
+        fun format(): String? {
+            val raw = text(CsvColumn.FORMAT, base.format) ?: return null
+            return BookFormat.normalize(raw) ?: run {
+                warnings += "Format \"$raw\" was ignored."
+                null
+            }
+        }
+
         fun readStatus(): String? {
             if (CsvColumn.READ_STATUS !in values) return base.readStatus
             val raw = values[CsvColumn.READ_STATUS]?.trim()?.lowercase().orEmpty()
@@ -247,6 +256,7 @@ class LibraryImporter(
             publisher = text(CsvColumn.PUBLISHER, base.publisher),
             publishedDate = year(),
             pageCount = number(CsvColumn.PAGE_COUNT, "Page count", base.pageCount, 1..100_000),
+            format = format(),
             language = text(CsvColumn.LANGUAGE, base.language),
             subjects = text(CsvColumn.SUBJECTS, base.subjects),
             description = text(CsvColumn.DESCRIPTION, base.description),

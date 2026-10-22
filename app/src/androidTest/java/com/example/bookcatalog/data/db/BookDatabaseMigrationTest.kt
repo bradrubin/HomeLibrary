@@ -52,6 +52,23 @@ class BookDatabaseMigrationTest {
         database.close()
     }
 
+    @Test
+    fun migrationAddsEmptyFormatToExistingBooks() {
+        helper.createDatabase(TEST_DATABASE, 2).apply {
+            execSQL("INSERT INTO books (title, dateAdded, dateModified) VALUES ('Existing', 1, 1)")
+            close()
+        }
+
+        val database = helper.runMigrationsAndValidate(TEST_DATABASE, 3, true, AppDatabase.MIGRATION_2_3)
+
+        database.query("SELECT title, format FROM books").use { cursor ->
+            cursor.moveToFirst()
+            assertEquals("Existing", cursor.getString(0))
+            assertEquals(true, cursor.isNull(1))
+        }
+        database.close()
+    }
+
     private companion object {
         const val TEST_DATABASE = "migration-test"
     }

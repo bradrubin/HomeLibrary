@@ -39,7 +39,7 @@ class LibraryImporterTest {
         source.books += listOf(
             Book(
                 id = 1, isbn13 = "9780385533225", isbn10 = "0385533225", title = "First, \"Quoted\"",
-                authors = "A; B", publishedDate = "1999", pageCount = 320, language = "en",
+                authors = "A; B", publishedDate = "1999", pageCount = 320, format = "ePub", language = "en",
                 subjects = "FICTION / General", description = "Line one\nLine two", location = "Den",
                 notes = "Señor", rating = 5, readStatus = "read", dateAdded = day("2026-10-01"),
                 coverFile = "9780385533225.jpg", coverSourceUrl = "https://example.com/c.jpg", dataSource = "Import",
@@ -137,6 +137,16 @@ class LibraryImporterTest {
         assertEquals(3, emma.rating)
         assertEquals("read", emma.readStatus)
         assertEquals(day("2026-10-21"), emma.dateAdded)
+    }
+
+    @Test
+    fun matchesFormatIgnoringCase() {
+        val store = FakeLibraryStore()
+
+        val summary = import(store, "title,format\nDune,HARDCOVER\nEmma,Scroll\nOdyssey,\n")
+
+        assertEquals(listOf("Hardcover", null, null), store.books.map { it.format })
+        assertEquals(listOf("Row 3: Format \"Scroll\" was ignored."), summary.warnings)
     }
 
     @Test

@@ -19,6 +19,7 @@ data class Book(
     val publisher: String? = null,
     val publishedDate: String? = null,
     val pageCount: Int? = null,
+    val format: String? = null,
     val language: String? = null,
     val subjects: String? = null,
     val description: String? = null,

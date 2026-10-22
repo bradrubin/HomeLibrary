@@ -56,6 +56,7 @@ import com.example.bookcatalog.data.db.Book
 import com.example.bookcatalog.data.covers.CoverStore
 import com.example.bookcatalog.data.covers.CoverBoundaryDetector
 import com.example.bookcatalog.data.covers.NormalizedCrop
+import com.example.bookcatalog.domain.BookFormat
 import com.example.bookcatalog.domain.PublicationYear
 import com.example.bookcatalog.domain.TitleCase
 import com.squareup.moshi.JsonDataException
@@ -79,6 +80,7 @@ private data class BookDraft(
     val publisher: String = "",
     val publishedDate: String = "",
     val pageCount: String = "",
+    val format: String = "",
     val language: String = "",
     val subjects: String = "",
     val description: String = "",
@@ -101,6 +103,7 @@ private data class BookDraft(
         publisher = publisher.optional(),
         publishedDate = publishedDate.optional(),
         pageCount = pageCount.toIntOrNull(),
+        format = format.optional(),
         language = language.optional(),
         subjects = subjects.optional(),
         description = description.optional(),
@@ -127,6 +130,7 @@ private data class BookDraft(
             publisher = book.publisher.orEmpty(),
             publishedDate = book.publishedDate.orEmpty(),
             pageCount = book.pageCount?.toString().orEmpty(),
+            format = book.format.orEmpty(),
             language = book.language.orEmpty(),
             subjects = book.subjects.orEmpty(),
             description = book.description.orEmpty(),
@@ -164,6 +168,7 @@ private val BookDraftSaver: Saver<BookDraft, Any> = listSaver<BookDraft, String>
             it.coverSourceUrl,
             it.dataSource,
             it.dateAdded.toString(),
+            it.format,
         )
     },
     restore = { values ->
@@ -187,6 +192,7 @@ private val BookDraftSaver: Saver<BookDraft, Any> = listSaver<BookDraft, String>
             coverSourceUrl = values.getOrNull(16).orEmpty(),
             dataSource = values.getOrNull(17).orEmpty(),
             dateAdded = values.getOrNull(18)?.toLongOrNull() ?: 0L,
+            format = values.getOrNull(19).orEmpty(),
         )
     },
 )
@@ -508,6 +514,11 @@ fun BookEditScreen(
                 { draft = draft.copy(pageCount = it) },
                 keyboardType = KeyboardType.Number,
             )
+            ChoiceField(
+                label = "Format",
+                value = draft.format,
+                choices = listOf("" to "Not set") + BookFormat.choices.map { it to it },
+            ) { draft = draft.copy(format = it) }
             BookTextField("Language", draft.language, { draft = draft.copy(language = it) })
             BookTextField("Subjects (BISAC)", draft.subjects, { draft = draft.copy(subjects = it) })
             Button(
@@ -648,7 +659,11 @@ fun BookEditScreen(
                 { draft = draft.copy(rating = it) },
                 keyboardType = KeyboardType.Number,
             )
-            ReadStatusField(draft.readStatus) { draft = draft.copy(readStatus = it) }
+            ChoiceField(
+                label = "Read status",
+                value = draft.readStatus,
+                choices = READ_STATUSES.map { it to it.replaceFirstChar(Char::uppercase) },
+            ) { draft = draft.copy(readStatus = it) }
         }
     }
 
@@ -720,9 +735,15 @@ private fun BookTextField(
     )
 }
 
+/** A read-only field that opens a menu of [choices], given as stored value to label pairs. */
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
-private fun ReadStatusField(value: String, onValueChange: (String) -> Unit) {
+private fun ChoiceField(
+    label: String,
+    value: String,
+    choices: List<Pair<String, String>>,
+    onValueChange: (String) -> Unit,
+) {
     var expanded by remember { mutableStateOf(false) }
     ExposedDropdownMenuBox(
         expanded = expanded,
@@ -730,21 +751,22 @@ private fun ReadStatusField(value: String, onValueChange: (String) -> Unit) {
         modifier = Modifier.fillMaxWidth(),
     ) {
         OutlinedTextField(
-            value = value.replaceFirstChar(Char::uppercase),
+            // A value outside the choices, such as one saved before they existed, is shown as is.
+            value = choices.firstOrNull { it.first == value }?.second ?: value,
             onValueChange = {},
             readOnly = true,
-            label = { Text("Read status") },
+            label = { Text(label) },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
             modifier = Modifier
                 .menuAnchor(MenuAnchorType.PrimaryNotEditable)
                 .fillMaxWidth(),
         )
         ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            READ_STATUSES.forEach { status ->
+            choices.forEach { (choice, choiceLabel) ->
                 DropdownMenuItem(
-                    text = { Text(status.replaceFirstChar(Char::uppercase)) },
+                    text = { Text(choiceLabel) },
                     onClick = {
-                        onValueChange(status)
+                        onValueChange(choice)
                         expanded = false
                     },
                 )

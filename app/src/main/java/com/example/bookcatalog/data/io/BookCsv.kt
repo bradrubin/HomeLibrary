@@ -21,6 +21,7 @@ enum class CsvColumn(val header: String) {
     PUBLISHER("publisher"),
     PUBLISHED_DATE("published_date"),
     PAGE_COUNT("page_count"),
+    FORMAT("format"),
     LANGUAGE("language"),
     SUBJECTS("subjects"),
     DESCRIPTION("description"),
@@ -50,7 +51,7 @@ data class CsvReadResult(
  * characters, RFC 4180 quoting and CRLF line endings.
  */
 object BookCsv {
-    private const val BYTE_ORDER_MARK = '﻿'
+    private const val BYTE_ORDER_MARK = '\uFEFF'
 
     fun write(books: List<Book>, output: OutputStream, zone: ZoneId = ZoneId.systemDefault()) {
         val writer = OutputStreamWriter(output, Charsets.UTF_8)
@@ -114,6 +115,7 @@ object BookCsv {
         CsvColumn.PUBLISHER -> publisher
         CsvColumn.PUBLISHED_DATE -> publishedDate
         CsvColumn.PAGE_COUNT -> pageCount?.toString()
+        CsvColumn.FORMAT -> format
         CsvColumn.LANGUAGE -> language
         CsvColumn.SUBJECTS -> subjects
         CsvColumn.DESCRIPTION -> description
