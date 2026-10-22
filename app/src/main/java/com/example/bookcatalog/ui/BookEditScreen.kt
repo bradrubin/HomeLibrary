@@ -1,5 +1,8 @@
 package com.example.bookcatalog.ui
 
+import android.graphics.Bitmap
+import android.content.ActivityNotFoundException
+import android.util.Log
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -41,11 +44,21 @@ import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.FileProvider
 import com.example.bookcatalog.data.db.Book
+import com.example.bookcatalog.data.covers.CoverStore
+import com.example.bookcatalog.data.covers.NormalizedCrop
 import android.database.sqlite.SQLiteConstraintException
 import coil.compose.AsyncImage
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.IOException
+import java.util.UUID
 
 private data class BookDraft(
     val isbn13: String = "",
@@ -81,8 +94,8 @@ private data class BookDraft(
         language = language.optional(),
         subjects = subjects.optional(),
         description = description.optional(),
-        coverFile = existingBook?.coverFile ?: coverFile.optional(),
-        coverSourceUrl = existingBook?.coverSourceUrl ?: coverSourceUrl.optional(),
+        coverFile = coverFile.optional() ?: existingBook?.coverFile,
+        coverSourceUrl = coverSourceUrl.optional() ?: existingBook?.coverSourceUrl,
         dataSource = existingBook?.dataSource ?: dataSource.optional(),
         location = location.optional(),
         notes = notes.optional(),
@@ -177,6 +190,7 @@ fun BookEditScreen(
     lookupMessage: String? = null,
     lookupWarning: String? = null,
     coverDirectory: File? = null,
+    coverStore: CoverStore? = null,
     onDone: () -> Unit,
     onSaved: () -> Unit = onDone,
 ) {
@@ -187,7 +201,114 @@ fun BookEditScreen(
     var initialized by rememberSaveable(bookId) { mutableStateOf(false) }
     var showDeleteConfirmation by remember { mutableStateOf(false) }
     var formError by rememberSaveable(bookId) { mutableStateOf<String?>(null) }
+    var coverError by rememberSaveable(bookId) { mutableStateOf<String?>(null) }
+    var captureFile by remember { mutableStateOf<File?>(null) }
+    var captureUri by remember { mutableStateOf<android.net.Uri?>(null) }
+    var cropBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val cameraLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.TakePicture(),
+    ) { captured ->
+        val source = captureFile
+        if (captured && source != null) {
+            scope.launch {
+                try {
+                    cropBitmap = withContext(Dispatchers.IO) {
+                        requireNotNull(coverStore).decodeForEditing(source)
+                    }
+                } catch (exception: IOException) {
+                    Log.e(TAG, "Could not load captured cover photo", exception)
+                    coverError = "The photo couldn't be opened. Please take another photo."
+                    source.delete()
+                    captureFile = null
+                } catch (exception: IllegalArgumentException) {
+                    Log.e(TAG, "Could not load captured cover photo", exception)
+                    coverError = "The photo couldn't be opened. Please take another photo."
+                    source.delete()
+                    captureFile = null
+                }
+            }
+        } else {
+            source?.delete()
+            captureFile = null
+            captureUri = null
+        }
+    }
+
+    fun takeCoverPhoto() {
+        if (coverStore == null) {
+            coverError = "Camera cover capture isn't available."
+            return
+        }
+        try {
+            val cameraDirectory = File(context.cacheDir, "camera-photos").apply {
+                if (!exists() && !mkdirs()) throw IOException("Could not create camera folder")
+            }
+            val file = File(cameraDirectory, "cover-${UUID.randomUUID()}.jpg")
+            if (!file.createNewFile()) throw IOException("Could not create camera photo")
+            captureFile = file
+            val uri = FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                file,
+            )
+            captureUri = uri
+            coverError = null
+            cameraLauncher.launch(uri)
+        } catch (exception: IOException) {
+            Log.e(TAG, "Could not prepare cover photo capture", exception)
+            captureFile?.delete()
+            captureFile = null
+            captureUri = null
+            coverError = "Couldn't prepare the camera. Please try again."
+        } catch (exception: IllegalArgumentException) {
+            Log.e(TAG, "Could not prepare cover photo capture", exception)
+            captureFile?.delete()
+            captureFile = null
+            captureUri = null
+            coverError = "Couldn't prepare the camera. Please try again."
+        } catch (exception: ActivityNotFoundException) {
+            Log.e(TAG, "No camera app is available for cover capture", exception)
+            captureFile?.delete()
+            captureFile = null
+            captureUri = null
+            coverError = "Couldn't prepare the camera. Please try again."
+        }
+    }
+
+    fun cancelCrop() {
+        cropBitmap?.recycle()
+        cropBitmap = null
+        captureFile?.delete()
+        captureFile = null
+        captureUri = null
+    }
+
+    fun useCrop(crop: NormalizedCrop) {
+        val source = captureFile ?: return
+        val store = coverStore ?: return
+        scope.launch {
+            try {
+                val newCover = withContext(Dispatchers.IO) {
+                    store.saveUserPhoto(source, crop)
+                }
+                draft = draft.copy(coverFile = newCover, coverSourceUrl = "user-photo")
+                coverError = null
+                cropBitmap?.recycle()
+                cropBitmap = null
+                source.delete()
+                captureFile = null
+                captureUri = null
+            } catch (exception: IOException) {
+                Log.e(TAG, "Could not save cropped cover photo", exception)
+                coverError = "The cropped photo couldn't be saved. Please try again."
+            } catch (exception: IllegalArgumentException) {
+                Log.e(TAG, "Could not crop cover photo", exception)
+                coverError = "The crop wasn't valid. Adjust it and try again."
+            }
+        }
+    }
 
     LaunchedEffect(bookId) {
         if (bookId != null) {
@@ -199,6 +320,15 @@ fun BookEditScreen(
             originalBook = initialBook
         }
         initialized = true
+    }
+
+    cropBitmap?.let { bitmap ->
+        CropPhotoScreen(
+            bitmap = bitmap,
+            onUseCrop = ::useCrop,
+            onCancel = ::cancelCrop,
+        )
+        return
     }
 
     Scaffold(
@@ -285,7 +415,10 @@ fun BookEditScreen(
             lookupWarning?.let {
                 Text(it, color = MaterialTheme.colorScheme.error)
             }
-            originalBook?.coverFile?.let { coverFile ->
+            coverError?.let {
+                Text(it, color = MaterialTheme.colorScheme.error)
+            }
+            draft.coverFile.takeIf(String::isNotBlank)?.let { coverFile ->
                 coverDirectory?.let { directory ->
                     AsyncImage(
                         model = File(directory, coverFile),
@@ -296,6 +429,13 @@ fun BookEditScreen(
                         contentScale = ContentScale.Fit,
                     )
                 }
+            }
+            Button(
+                onClick = ::takeCoverPhoto,
+                enabled = captureUri == null,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(if (draft.coverFile.isBlank()) "Take cover photo" else "Replace cover photo")
             }
             BookTextField("Title", draft.title, { draft = draft.copy(title = it) }, required = true)
             BookTextField("Subtitle", draft.subtitle, { draft = draft.copy(subtitle = it) })
@@ -320,7 +460,7 @@ fun BookEditScreen(
                 keyboardType = KeyboardType.Number,
             )
             BookTextField("Language", draft.language, { draft = draft.copy(language = it) })
-            BookTextField("Subjects", draft.subjects, { draft = draft.copy(subjects = it) })
+            BookTextField("Subjects (BISAC)", draft.subjects, { draft = draft.copy(subjects = it) })
             BookTextField(
                 "Description",
                 draft.description,
@@ -415,3 +555,5 @@ private fun String.optional(): String? = trim().takeIf(String::isNotBlank)
 
 private fun String.normalizedIsbn(): String =
     filterNot(Char::isWhitespace).replace("-", "").uppercase()
+
+private const val TAG = "BookEditScreen"

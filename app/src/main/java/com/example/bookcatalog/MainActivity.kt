@@ -21,6 +21,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.example.bookcatalog.data.BookRepository
+import com.example.bookcatalog.data.covers.CoverStore
 import com.example.bookcatalog.data.metadata.BookMetadataRepository
 import com.example.bookcatalog.data.metadata.MetadataLookupResult
 import com.example.bookcatalog.ui.BarcodeScanScreen
@@ -49,6 +50,7 @@ class MainActivity : ComponentActivity() {
                         repository = container.bookRepository,
                         metadataRepository = container.metadataRepository,
                         coverDirectory = container.coverStore.coverDirectory,
+                        coverStore = container.coverStore,
                     )
                 }
             }
@@ -61,6 +63,7 @@ private fun BookCatalogNavigation(
     repository: BookRepository,
     metadataRepository: BookMetadataRepository,
     coverDirectory: File,
+    coverStore: CoverStore,
 ) {
     val navController = rememberNavController()
     var pendingLookup by remember { mutableStateOf<MetadataLookupResult?>(null) }
@@ -135,6 +138,7 @@ private fun BookCatalogNavigation(
                 lookupMessage = pendingLookup?.message.takeIf { bookId == null },
                 lookupWarning = pendingLookup?.warning.takeIf { bookId == null },
                 coverDirectory = coverDirectory,
+                coverStore = coverStore,
                 onDone = {
                     pendingLookup = null
                     navController.popBackStack()

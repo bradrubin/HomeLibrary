@@ -16,6 +16,7 @@ import java.io.IOException
 class BookMetadataRepository(
     private val sources: List<BookMetadataSource>,
     private val coverStore: CoverStore,
+    private val subjectMapper: HomeChatBisacSubjectMapper? = null,
 ) {
     suspend fun lookup(isbn13: String): MetadataLookupResult = supervisorScope {
         val openLibrary = sources.first { it.name == "OpenLibrary" }
@@ -35,6 +36,7 @@ class BookMetadataRepository(
             )
 
         var coverDownloadFailed = false
+        var mappedBook = book
         val coverUrls = listOfNotNull(
             openResult.metadata?.coverUrl,
             googleResult.metadata?.coverUrl,
@@ -45,12 +47,11 @@ class BookMetadataRepository(
                     coverStore.download(isbn13, coverUrl)
                 }
                 if (coverFile != null) {
-                    return@supervisorScope MetadataLookupResult(
-                        book = book.copy(
-                            coverFile = coverFile,
-                            coverSourceUrl = coverUrl,
-                        ),
+                    mappedBook = book.copy(
+                        coverFile = coverFile,
+                        coverSourceUrl = coverUrl,
                     )
+                    break
                 }
             } catch (exception: IOException) {
                 Log.w(TAG, "Could not download cover for $isbn13", exception)
@@ -60,13 +61,45 @@ class BookMetadataRepository(
                 coverDownloadFailed = true
             }
         }
+        var subjectMappingFailed = false
+        if (subjectMapper != null) {
+            try {
+                val subjects = withTimeoutOrNull(SUBJECT_MAPPING_TIMEOUT_MS) {
+                    subjectMapper.map(mappedBook)
+                }
+                if (subjects.isNullOrEmpty()) {
+                    subjectMappingFailed = true
+                } else {
+                    mappedBook = mappedBook.copy(
+                        subjects = subjects.joinToString("; "),
+                        dataSource = listOfNotNull(mappedBook.dataSource, "HomeChat")
+                            .joinToString("+"),
+                    )
+                }
+            } catch (exception: CancellationException) {
+                throw exception
+            } catch (exception: IOException) {
+                Log.w(TAG, "Could not map subjects to BISAC for $isbn13", exception)
+                subjectMappingFailed = true
+            } catch (exception: HttpException) {
+                Log.w(TAG, "Could not map subjects to BISAC for $isbn13", exception)
+                subjectMappingFailed = true
+            } catch (exception: JsonDataException) {
+                Log.w(TAG, "Could not parse BISAC subject response for $isbn13", exception)
+                subjectMappingFailed = true
+            } catch (exception: IllegalArgumentException) {
+                Log.w(TAG, "Local model returned invalid BISAC subjects for $isbn13", exception)
+                subjectMappingFailed = true
+            }
+        }
         MetadataLookupResult(
-            book = book,
-            warning = if (coverDownloadFailed) {
+            book = mappedBook,
+            warning = listOfNotNull(
                 "Book details were found, but its cover could not be downloaded."
-            } else {
-                null
-            },
+                    .takeIf { coverDownloadFailed },
+                "Could not map subjects to BISAC; source subjects are shown instead."
+                    .takeIf { subjectMappingFailed },
+            ).joinToString(" ").ifEmpty { null },
         )
     }
 
@@ -121,5 +154,6 @@ class BookMetadataRepository(
     companion object {
         private const val TAG = "BookMetadata"
         private const val SOURCE_TIMEOUT_MS = 10_000L
+        private const val SUBJECT_MAPPING_TIMEOUT_MS = 25_000L
     }
 }

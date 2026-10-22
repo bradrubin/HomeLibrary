@@ -1,4 +1,5 @@
 import java.util.Properties
+import java.net.URI
 
 plugins {
     alias(libs.plugins.android.application)
@@ -13,6 +14,48 @@ val localProperties = Properties().apply {
 val googleBooksApiKey = localProperties.getProperty("GOOGLE_BOOKS_API_KEY", "")
     .replace("\\", "\\\\")
     .replace("\"", "\\\"")
+val homeChatBaseUrl = localProperties.getProperty("HOMECHAT_LLM_BASE_URL", "").trim()
+val homeChatModel = localProperties.getProperty("HOMECHAT_LLM_MODEL", "").trim()
+val homeChatApiKey = localProperties.getProperty("HOMECHAT_LLM_API_KEY", "")
+
+fun String.asBuildConfigString(): String = replace("\\", "\\\\").replace("\"", "\\\"")
+
+val homeChatUri = homeChatBaseUrl.takeIf(String::isNotBlank)?.let(::URI)
+val homeChatHost = homeChatUri?.host
+require(homeChatBaseUrl.isBlank() || homeChatHost != null) {
+    "HOMECHAT_LLM_BASE_URL must be an absolute URL with a host."
+}
+val generatedNetworkSecurityResources = layout.buildDirectory.dir("generated/res/networkSecurity/main")
+val generateNetworkSecurityConfig = tasks.register("generateNetworkSecurityConfig") {
+    inputs.property("homeChatHost", homeChatHost.orEmpty())
+    inputs.property("homeChatUsesCleartext", homeChatUri?.scheme == "http")
+    val outputFile = generatedNetworkSecurityResources.map {
+        it.file("xml/network_security_config.xml")
+    }
+    outputs.file(outputFile)
+    doLast {
+        val hostPolicy = if (homeChatUri?.scheme == "http") {
+            """
+            <domain-config cleartextTrafficPermitted="true">
+                <domain includeSubdomains="false">${requireNotNull(homeChatHost)}</domain>
+            </domain-config>
+            """.trimIndent()
+        } else {
+            ""
+        }
+        outputFile.get().asFile.apply {
+            parentFile.mkdirs()
+            writeText(
+                """
+                <network-security-config>
+                    <base-config cleartextTrafficPermitted="false" />
+                    $hostPolicy
+                </network-security-config>
+                """.trimIndent(),
+            )
+        }
+    }
+}
 
 android {
     namespace = "com.example.bookcatalog"
@@ -30,7 +73,10 @@ android {
         versionCode = 1
         versionName = "1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        buildConfigField("String", "GOOGLE_BOOKS_API_KEY", "\"$googleBooksApiKey\"")
+        buildConfigField("String", "GOOGLE_BOOKS_API_KEY", "\"${googleBooksApiKey.asBuildConfigString()}\"")
+        buildConfigField("String", "HOMECHAT_LLM_BASE_URL", "\"${homeChatBaseUrl.asBuildConfigString()}\"")
+        buildConfigField("String", "HOMECHAT_LLM_MODEL", "\"${homeChatModel.asBuildConfigString()}\"")
+        buildConfigField("String", "HOMECHAT_LLM_API_KEY", "\"${homeChatApiKey.asBuildConfigString()}\"")
     }
 
     buildFeatures {
@@ -39,6 +85,11 @@ android {
     }
 
     sourceSets.getByName("androidTest").assets.srcDir("$projectDir/schemas")
+    sourceSets.getByName("main").res.srcDir(generatedNetworkSecurityResources)
+}
+
+tasks.named("preBuild").configure {
+    dependsOn(generateNetworkSecurityConfig)
 }
 
 dependencies {
@@ -62,6 +113,7 @@ dependencies {
     implementation(libs.moshi.kotlin)
     implementation(libs.coil.compose)
     implementation(libs.play.services.code.scanner)
+    implementation(libs.androidx.exifinterface)
 
     debugImplementation(libs.androidx.compose.ui.tooling)
     testImplementation(libs.junit)
