@@ -1,5 +1,6 @@
 package com.example.bookcatalog.data.io
 
+import com.example.bookcatalog.data.db.Book
 import java.io.File
 import java.io.OutputStream
 import java.time.ZoneId
@@ -11,18 +12,20 @@ class LibraryExporter(
     private val coverDirectory: File,
     private val zone: ZoneId = ZoneId.systemDefault(),
 ) {
-    suspend fun exportCsv(output: OutputStream): ExportSummary {
-        val books = store.allBooks()
+    /** Exports [selection], or the whole library when it is null. */
+    suspend fun exportCsv(output: OutputStream, selection: List<Book>? = null): ExportSummary {
+        val books = selection ?: store.allBooks()
         BookCsv.write(books, output, zone)
         return ExportSummary(books = books.size, covers = 0)
     }
 
-    /** Writes books.csv and a covers folder holding each book's cover file. */
+    /** Writes books.csv and a covers folder for [selection], or the whole library when it is null. */
     suspend fun exportZip(
         output: OutputStream,
+        selection: List<Book>? = null,
         onProgress: (TransferProgress) -> Unit = {},
     ): ExportSummary {
-        val books = store.allBooks()
+        val books = selection ?: store.allBooks()
         val coverNames = books.mapNotNull { it.coverFile }.distinct()
         var covers = 0
         var missing = 0

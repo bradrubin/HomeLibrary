@@ -52,4 +52,11 @@ data class ExportSummary(
     val covers: Int,
     /** Books whose cover file is listed but missing, so the bundle has no image for them. */
     val missingCovers: Int = 0,
-)
+) {
+    fun message(zip: Boolean): String = buildString {
+        append("Exported ${if (books == 1) "1 book" else "$books books"}")
+        if (zip) append(" and ${if (covers == 1) "1 cover" else "$covers covers"}")
+        append(".")
+        if (missingCovers > 0) append(" $missingCovers cover files were missing and left out.")
+    }
+}

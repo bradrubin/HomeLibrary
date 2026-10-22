@@ -61,7 +61,9 @@ private fun BookCatalogNavigation(container: AppContainer) {
         composable("library") {
             val viewModel: LibraryViewModel = viewModel(
                 factory = viewModelFactory {
-                    initializer { LibraryViewModel(repository) }
+                    initializer {
+                        LibraryViewModel(repository, container.libraryExporter, container.contentResolver)
+                    }
                 },
             )
             LibraryScreen(

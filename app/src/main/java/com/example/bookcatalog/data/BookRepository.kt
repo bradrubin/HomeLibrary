@@ -38,9 +38,11 @@ class BookRepository(
         return book.id
     }
 
-    suspend fun delete(book: Book) {
-        bookDao.delete(book)
-        book.coverFile?.let { deleteCoverIfUnused(it) }
+    suspend fun delete(book: Book) = delete(listOf(book))
+
+    suspend fun delete(books: List<Book>) {
+        database.withTransaction { books.forEach { bookDao.delete(it) } }
+        books.mapNotNull { it.coverFile }.distinct().forEach { deleteCoverIfUnused(it) }
     }
 
     /**

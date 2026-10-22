@@ -15,7 +15,12 @@ import com.example.bookcatalog.data.io.LibraryImporter
 import com.example.bookcatalog.data.io.TransferProgress
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import com.example.bookcatalog.domain.LibraryQuery
+import com.example.bookcatalog.domain.SortOrder
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -25,18 +30,100 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.FileNotFoundException
 import java.io.IOException
+import java.io.OutputStream
 
-class LibraryViewModel(repository: BookRepository) : ViewModel() {
-    val books = repository.books.stateIn(
+data class LibraryControls(
+    val query: String = "",
+    val sort: SortOrder = SortOrder.TITLE,
+    val grid: Boolean = false,
+    val selecting: Boolean = false,
+    val selectedIds: Set<Long> = emptySet(),
+)
+
+data class LibraryUiState(
+    /** The books matching the search, in sort order. */
+    val books: List<Book> = emptyList(),
+    val libraryIsEmpty: Boolean = true,
+    val controls: LibraryControls = LibraryControls(),
+)
+
+class LibraryViewModel(
+    private val repository: BookRepository,
+    private val exporter: LibraryExporter,
+    private val contentResolver: ContentResolver,
+) : ViewModel() {
+    private val controls = MutableStateFlow(LibraryControls())
+    private val mutableMessages = Channel<String>(Channel.BUFFERED)
+
+    /** One-off results, such as a finished export, to show as a snackbar. */
+    val messages = mutableMessages.receiveAsFlow()
+
+    val state: StateFlow<LibraryUiState> = combine(repository.books, controls) { books, controls ->
+        val ids = books.mapTo(HashSet(), Book::id)
+        LibraryUiState(
+            books = LibraryQuery.apply(books, controls.query, controls.sort),
+            libraryIsEmpty = books.isEmpty(),
+            // Books deleted elsewhere drop out of the selection.
+            controls = controls.copy(selectedIds = controls.selectedIds.filterTo(HashSet()) { it in ids }),
+        )
+    }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
-        initialValue = emptyList(),
+        initialValue = LibraryUiState(),
     )
 
-    private val bookRepository = repository
+    fun setQuery(query: String) = controls.update { it.copy(query = query) }
 
-    suspend fun delete(book: Book) {
-        bookRepository.delete(book)
+    fun setSort(sort: SortOrder) = controls.update { it.copy(sort = sort) }
+
+    fun toggleGrid() = controls.update { it.copy(grid = !it.grid) }
+
+    fun startSelecting(bookId: Long? = null) =
+        controls.update { it.copy(selecting = true, selectedIds = setOfNotNull(bookId)) }
+
+    fun stopSelecting() = controls.update { it.copy(selecting = false, selectedIds = emptySet()) }
+
+    fun toggleSelected(bookId: Long) = controls.update {
+        it.copy(selectedIds = if (bookId in it.selectedIds) it.selectedIds - bookId else it.selectedIds + bookId)
+    }
+
+    /** Selects every book the search currently shows. */
+    fun selectAllShown() = controls.update { it.copy(selectedIds = it.selectedIds + state.value.books.map(Book::id)) }
+
+    fun deselectAll() = controls.update { it.copy(selectedIds = emptySet()) }
+
+    fun deleteSelected() {
+        viewModelScope.launch {
+            val books = selectedBooks()
+            repository.delete(books)
+            stopSelecting()
+            mutableMessages.send(if (books.size == 1) "Deleted 1 book." else "Deleted ${books.size} books.")
+        }
+    }
+
+    fun exportSelected(uri: Uri, zip: Boolean) {
+        viewModelScope.launch {
+            try {
+                val books = selectedBooks()
+                val summary = withContext(Dispatchers.IO) {
+                    contentResolver.openForExport(uri).use { stream ->
+                        if (zip) exporter.exportZip(stream, books) else exporter.exportCsv(stream, books)
+                    }
+                }
+                stopSelecting()
+                mutableMessages.send(summary.message(zip))
+            } catch (exception: IOException) {
+                mutableMessages.send("The export failed: ${exception.message ?: "the file couldn't be written"}.")
+            } catch (exception: SecurityException) {
+                mutableMessages.send("The export failed: the app wasn't allowed to use that file.")
+            }
+        }
+    }
+
+    /** Includes selected books the current search hides. */
+    private suspend fun selectedBooks(): List<Book> {
+        val ids = controls.value.selectedIds
+        return LibraryQuery.sort(repository.allBooks().filter { it.id in ids }, controls.value.sort)
     }
 }
 
@@ -96,24 +183,11 @@ class ImportExportViewModel(
 
     fun export(uri: Uri, zip: Boolean) = run("export") {
         val summary = withContext(Dispatchers.IO) {
-            // "wt" truncates a file being replaced, but not every provider supports it.
-            val output = runCatching { contentResolver.openOutputStream(uri, "wt") }.getOrNull()
-                ?: contentResolver.openOutputStream(uri, "w")
-                ?: throw FileNotFoundException("The export file couldn't be opened.")
-            output.use { stream ->
-                if (zip) exporter.exportZip(stream, ::report) else exporter.exportCsv(stream)
+            contentResolver.openForExport(uri).use { stream ->
+                if (zip) exporter.exportZip(stream, onProgress = ::report) else exporter.exportCsv(stream)
             }
         }
-        val books = if (summary.books == 1) "1 book" else "${summary.books} books"
-        val message = buildString {
-            append("Exported $books")
-            if (zip) append(" and ${summary.covers} ${if (summary.covers == 1) "cover" else "covers"}")
-            append(".")
-            if (summary.missingCovers > 0) {
-                append(" ${summary.missingCovers} cover files were missing and left out.")
-            }
-        }
-        mutableState.update { it.copy(exportMessage = message) }
+        mutableState.update { it.copy(exportMessage = summary.message(zip)) }
     }
 
     fun import(uri: Uri, options: ImportOptions) = run("import") {
@@ -149,3 +223,10 @@ class ImportExportViewModel(
         }
     }
 }
+
+/** Opens a file chosen with CreateDocument for writing, replacing anything already in it. */
+internal fun ContentResolver.openForExport(uri: Uri): OutputStream =
+    // "wt" truncates a file being replaced, but not every provider supports it.
+    runCatching { openOutputStream(uri, "wt") }.getOrNull()
+        ?: openOutputStream(uri, "w")
+        ?: throw FileNotFoundException("The export file couldn't be opened.")
