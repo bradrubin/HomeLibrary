@@ -86,12 +86,16 @@ internal object CoverBoundaryDetector {
         }
         val width = straightened.transform.width.toFloat()
         val height = straightened.transform.height.toFloat()
+        // The edges are found a little outside the cover, so trim inward: losing a sliver of the
+        // cover's edge looks better than a strip of background around it.
+        val insetX = (straightened.right - straightened.left) * COVER_INSET
+        val insetY = (straightened.bottom - straightened.top) * COVER_INSET
         return DetectedCover(
             crop = NormalizedCrop(
-                left = (straightened.left / width).coerceIn(0f, 1f),
-                top = (straightened.top / height).coerceIn(0f, 1f),
-                right = (straightened.right / width).coerceIn(0f, 1f),
-                bottom = (straightened.bottom / height).coerceIn(0f, 1f),
+                left = ((straightened.left + insetX) / width).coerceIn(0f, 1f),
+                top = ((straightened.top + insetY) / height).coerceIn(0f, 1f),
+                right = ((straightened.right - insetX) / width).coerceIn(0f, 1f),
+                bottom = ((straightened.bottom - insetY) / height).coerceIn(0f, 1f),
             ),
             transform = straightened.transform,
         )
@@ -566,5 +570,6 @@ internal object CoverBoundaryDetector {
     // Opposite sides converging by over half a degree are squared up, if no side is more than
     // six degrees off the overall tilt.
     private const val MIN_KEYSTONE = 0.008f
+    private const val COVER_INSET = 0.02f
     private const val MAX_KEYSTONE = 0.105f
 }

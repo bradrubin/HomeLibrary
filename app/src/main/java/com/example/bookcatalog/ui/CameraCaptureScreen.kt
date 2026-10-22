@@ -84,7 +84,13 @@ fun CameraCaptureScreen(
     ) {
         if (hasPermission) {
             AndroidView(
-                factory = { PreviewView(it).apply { this.controller = controller } },
+                // Fit rather than fill, so the viewfinder shows exactly what the photo will hold.
+                factory = {
+                    PreviewView(it).apply {
+                        scaleType = PreviewView.ScaleType.FIT_CENTER
+                        this.controller = controller
+                    }
+                },
                 modifier = Modifier.fillMaxSize(),
             )
         }
