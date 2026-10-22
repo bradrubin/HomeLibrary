@@ -38,7 +38,7 @@ object LibraryQuery {
         val comparator = when (sort) {
             SortOrder.TITLE -> byTitle
             SortOrder.AUTHOR -> compareBy<Book> { it.authors.isNullOrBlank() }
-                .thenBy { comparable(it.authors.orEmpty()) }
+                .thenBy { AuthorNames.sortKey(it.authors) }
                 .then(byTitle)
             SortOrder.DATE_ADDED -> compareByDescending<Book> { it.dateAdded }.then(byTitle)
             SortOrder.PUBLICATION_YEAR -> compareBy<Book> { it.publishedDate.isNullOrBlank() }

@@ -33,7 +33,7 @@ class MetadataMergerTest {
 
         requireNotNull(book)
         assertEquals("Open Title", book.title)
-        assertEquals("Doe, Jane", book.authors)
+        assertEquals("Jane Doe", book.authors)
         assertEquals("Open publisher", book.publisher)
         assertEquals("1999", book.publishedDate)
         assertEquals(240, book.pageCount)
@@ -53,7 +53,7 @@ class MetadataMergerTest {
 
         requireNotNull(book)
         assertEquals("Open Title", book.title)
-        assertEquals("Doe, Jane", book.authors)
+        assertEquals("Jane Doe", book.authors)
     }
 
     @Test

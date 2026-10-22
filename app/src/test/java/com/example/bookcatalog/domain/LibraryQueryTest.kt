@@ -45,6 +45,18 @@ class LibraryQueryTest {
     }
 
     @Test
+    fun sortsAuthorsBySurname() {
+        val leGuin = Book(id = 4, title = "The Dispossessed", authors = "Ursula K. Le Guin")
+        val tucci = Book(id = 5, title = "Taste", authors = "Tucci, Stanley")
+        val adams = Book(id = 6, title = "Hitchhiker", authors = "Douglas Adams")
+
+        assertEquals(
+            listOf(adams, dune, odyssey, leGuin, tucci),
+            LibraryQuery.sort(listOf(tucci, leGuin, odyssey, dune, adams), SortOrder.AUTHOR),
+        )
+    }
+
+    @Test
     fun sortsNewestAddedFirst() {
         assertEquals(listOf(dune, amelie, odyssey), LibraryQuery.sort(listOf(odyssey, amelie, dune), SortOrder.DATE_ADDED))
     }

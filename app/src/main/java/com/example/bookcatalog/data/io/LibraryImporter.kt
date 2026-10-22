@@ -1,6 +1,7 @@
 package com.example.bookcatalog.data.io
 
 import com.example.bookcatalog.data.db.Book
+import com.example.bookcatalog.domain.AuthorNames
 import com.example.bookcatalog.domain.BookFormat
 import com.example.bookcatalog.domain.IsbnUtils
 import com.example.bookcatalog.domain.Language
@@ -254,7 +255,7 @@ class LibraryImporter(
             isbn10 = isbn10,
             title = requireNotNull(text(CsvColumn.TITLE, base.title)),
             subtitle = text(CsvColumn.SUBTITLE, base.subtitle),
-            authors = text(CsvColumn.AUTHORS, base.authors),
+            authors = AuthorNames.normalize(text(CsvColumn.AUTHORS, base.authors)),
             publisher = text(CsvColumn.PUBLISHER, base.publisher),
             publishedDate = year(),
             pageCount = number(CsvColumn.PAGE_COUNT, "Page count", base.pageCount, 1..100_000),

@@ -54,6 +54,7 @@ import com.example.bookcatalog.data.covers.CoverBoundaryDetector
 import com.example.bookcatalog.data.covers.NormalizedCrop
 import com.example.bookcatalog.data.covers.PhotoTransform
 import com.example.bookcatalog.data.metadata.ModelException
+import com.example.bookcatalog.domain.AuthorNames
 import com.example.bookcatalog.domain.BookFormat
 import com.example.bookcatalog.domain.Language
 import com.example.bookcatalog.domain.PublicationYear
@@ -97,7 +98,7 @@ private data class BookDraft(
         isbn10 = isbn10.normalizedIsbn().takeIf(String::isNotBlank),
         title = TitleCase.format(title.trim()),
         subtitle = subtitle.optional()?.let(TitleCase::format),
-        authors = authors.optional(),
+        authors = AuthorNames.normalize(authors),
         publisher = publisher.optional(),
         publishedDate = publishedDate.optional(),
         pageCount = pageCount.toIntOrNull(),
@@ -446,7 +447,7 @@ fun BookEditScreen(
                 "Authors",
                 draft.authors,
                 { draft = draft.copy(authors = it) },
-                placeholder = "e.g. Doe, Jane; Smith, John",
+                placeholder = "e.g. Jane Doe; John Smith",
             )
             BookTextField("ISBN-13", draft.isbn13, { draft = draft.copy(isbn13 = it) })
             BookTextField("ISBN-10", draft.isbn10, { draft = draft.copy(isbn10 = it) })

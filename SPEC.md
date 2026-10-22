@@ -42,7 +42,7 @@ Personal use, single user, sideloaded. No Play Store release, no accounts, no cl
 | `isbn10` | String? | Derived when the ISBN-13 starts with 978 |
 | `title` | String | Required |
 | `subtitle` | String? | |
-| `authors` | String? | Multiple authors joined with `; ` |
+| `authors` | String? | Names in natural order ("Jane Doe"), joined with `; `. Inverted "Doe, Jane" names are converted on entry. Sorted by the first author's surname. |
 | `publisher` | String? | |
 | `publishedDate` | String? | Publication year only, as four digits (e.g., `1999`). Sources return "1999", "1999-05", "May 1999", etc.; keep just the year. |
 | `pageCount` | Int? | |

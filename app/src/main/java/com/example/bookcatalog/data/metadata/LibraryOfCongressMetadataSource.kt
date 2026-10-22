@@ -1,6 +1,7 @@
 package com.example.bookcatalog.data.metadata
 
 import com.example.bookcatalog.data.remote.LibraryOfCongressApi
+import com.example.bookcatalog.domain.AuthorNames
 import com.example.bookcatalog.domain.BookFormat
 import com.example.bookcatalog.domain.IsbnUtils
 import org.w3c.dom.Element
@@ -28,8 +29,7 @@ internal object ModsRecordParser {
     private const val MAX_BISAC_SUBJECTS = 3
     private val pageCountPattern = Regex("""(\d+)\s*(?:pages|p\.)""")
     private val yearPattern = Regex("""\d{4}""")
-    private val nameSuffixes = setOf("Jr.", "Sr.", "II", "III", "IV")
-    private val abbreviations = nameSuffixes + setOf("Inc.", "Co.", "Ltd.", "Corp.", "Bros.")
+    private val abbreviations = setOf("Jr.", "Sr.", "II", "III", "IV", "Inc.", "Co.", "Ltd.", "Corp.", "Bros.")
 
     fun parse(stream: InputStream, isbn13: String): BookMetadata? {
         val document = try {
@@ -114,7 +114,8 @@ internal object ModsRecordParser {
                 name.children("namePart")
                     .firstOrNull { !it.hasAttribute("type") }
                     ?.textContent
-                    ?.let(::naturalOrderName)
+                    ?.let(::cleanCatalogText)
+                    ?.let(AuthorNames::naturalOrder)
             }
             .distinct()
 
@@ -144,15 +145,6 @@ internal object ModsRecordParser {
                     ?.joinToString(" -- ")
             }
             .distinct()
-
-    /** Turns a cataloged "Fitzgerald, F. Scott (Francis Scott), 1896-1940" name into "F. Scott Fitzgerald". */
-    private fun naturalOrderName(value: String): String? {
-        val cleaned = cleanCatalogText(value.replace(Regex("""\s*\([^)]*\)"""), "")) ?: return null
-        val parts = cleaned.split(", ")
-        if (parts.size == 1) return cleaned
-        val suffixes = parts.drop(2).filter { it in nameSuffixes }
-        return (listOf("${parts[1]} ${parts[0]}") + suffixes).joinToString(", ")
-    }
 
     /** Strips the trailing ISBD punctuation that catalog records leave on field values. */
     private fun cleanCatalogText(value: String): String? {

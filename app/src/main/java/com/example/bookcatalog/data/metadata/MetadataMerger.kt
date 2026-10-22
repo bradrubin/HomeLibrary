@@ -1,6 +1,7 @@
 package com.example.bookcatalog.data.metadata
 
 import com.example.bookcatalog.data.db.Book
+import com.example.bookcatalog.domain.AuthorNames
 import com.example.bookcatalog.domain.IsbnUtils
 import com.example.bookcatalog.domain.Language
 import com.example.bookcatalog.domain.PublicationYear
@@ -36,7 +37,7 @@ object MetadataMerger {
             isbn10 = IsbnUtils.isbn13To10(isbn13),
             title = TitleCase.format(open?.title ?: google?.title ?: loc?.title.orEmpty()),
             subtitle = (open?.subtitle ?: google?.subtitle ?: loc?.subtitle)?.let(TitleCase::format),
-            authors = open?.authors.joined() ?: google?.authors.joined() ?: loc?.authors.joined(),
+            authors = AuthorNames.normalize(open?.authors.joined() ?: google?.authors.joined() ?: loc?.authors.joined()),
             publisher = open?.publisher ?: google?.publisher ?: loc?.publisher,
             publishedDate = publishedDate,
             pageCount = google?.pageCount ?: open?.pageCount ?: loc?.pageCount,
