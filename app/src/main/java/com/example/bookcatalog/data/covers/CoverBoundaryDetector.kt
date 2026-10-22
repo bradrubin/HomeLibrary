@@ -2,19 +2,28 @@ package com.example.bookcatalog.data.covers
 
 import android.graphics.Bitmap
 import kotlin.math.abs
+import kotlin.math.atan
 import kotlin.math.ceil
+import kotlin.math.cos
 import kotlin.math.max
+import kotlin.math.sin
+
+/** A detected cover: rotate the photo clockwise by [rotationDegrees], then crop it to [crop]. */
+internal data class DetectedCover(
+    val crop: NormalizedCrop,
+    val rotationDegrees: Float,
+)
 
 /**
  * Finds a book cover photographed against a plainer background.
  *
  * The photo is shrunk so blur and sensor noise average out, the background is grown inward from
  * the photo's border through gradual color changes, and the largest remaining region is accepted
- * when it is shaped like a cover. Its bounding box is returned, so slightly tilted books are
- * still fully enclosed.
+ * when it is shaped like a cover. The tilt of its edges gives the rotation that straightens the
+ * book, and the crop is the book's box in the straightened photo.
  */
 internal object CoverBoundaryDetector {
-    fun detect(bitmap: Bitmap): NormalizedCrop? {
+    fun detect(bitmap: Bitmap): DetectedCover? {
         val pixels = IntArray(bitmap.width * bitmap.height)
         bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
         return detect(bitmap.width, bitmap.height) { x, y -> pixels[y * bitmap.width + x] }
@@ -24,18 +33,24 @@ internal object CoverBoundaryDetector {
         imageWidth: Int,
         imageHeight: Int,
         pixelAt: (x: Int, y: Int) -> Int,
-    ): NormalizedCrop? {
+    ): DetectedCover? {
         if (imageWidth < MIN_IMAGE_EDGE || imageHeight < MIN_IMAGE_EDGE) return null
         val image = medianFilter(downscale(imageWidth, imageHeight, pixelAt))
         val background = findBackground(image) ?: return null
         val found = largestForegroundRegion(image, openForeground(image, background)) ?: return null
-        val fill = found.pixelCount.toFloat() / ((found.right - found.left) * (found.bottom - found.top))
-        val region = refineEdges(image, found)
+        val placement = refineEdges(
+            image,
+            found,
+            centerX = imageWidth / 2f / image.block,
+            centerY = imageHeight / 2f / image.block,
+        )
 
-        val regionWidth = region.right - region.left
-        val regionHeight = region.bottom - region.top
+        val regionWidth = placement.right - placement.left
+        val regionHeight = placement.bottom - placement.top
         if (regionWidth <= 0 || regionHeight <= 0) return null
-        val aspectRatio = regionWidth.toFloat() / regionHeight
+        val aspectRatio = regionWidth / regionHeight
+        // Measured against the straightened box, so tilted books still count as solid rectangles.
+        val fill = found.pixelCount / (regionWidth * regionHeight)
         if (regionWidth < image.width * MIN_WIDTH_RATIO ||
             regionHeight < image.height * MIN_HEIGHT_RATIO ||
             aspectRatio !in MIN_COVER_ASPECT..MAX_COVER_ASPECT ||
@@ -43,11 +58,21 @@ internal object CoverBoundaryDetector {
         ) {
             return null
         }
-        return NormalizedCrop(
-            left = region.left.toFloat() * image.block / imageWidth,
-            top = region.top.toFloat() * image.block / imageHeight,
-            right = (region.right.toFloat() * image.block / imageWidth).coerceAtMost(1f),
-            bottom = (region.bottom.toFloat() * image.block / imageHeight).coerceAtMost(1f),
+        // Size of the photo once rotated, matching the bounds Bitmap.createBitmap gives it.
+        val cos = abs(cos(placement.tilt))
+        val sin = abs(sin(placement.tilt))
+        val rotatedWidth = imageWidth * cos + imageHeight * sin
+        val rotatedHeight = imageWidth * sin + imageHeight * cos
+        fun normalizedX(x: Float) = ((rotatedWidth / 2 + x * image.block) / rotatedWidth).coerceIn(0f, 1f)
+        fun normalizedY(y: Float) = ((rotatedHeight / 2 + y * image.block) / rotatedHeight).coerceIn(0f, 1f)
+        return DetectedCover(
+            crop = NormalizedCrop(
+                left = normalizedX(placement.left),
+                top = normalizedY(placement.top),
+                right = normalizedX(placement.right),
+                bottom = normalizedY(placement.bottom),
+            ),
+            rotationDegrees = if (placement.tilt == 0f) 0f else -Math.toDegrees(placement.tilt.toDouble()).toFloat(),
         )
     }
 
@@ -228,14 +253,16 @@ internal object CoverBoundaryDetector {
 
     /**
      * Pulls each side of the region in to the outermost sharp color step, so soft cast shadows
-     * beside the book are left out. Each side uses the outermost tenth of the per-line positions,
-     * which keeps tilted books fully enclosed.
+     * beside the book are left out, and measures the book's tilt from how those steps drift.
+     * Sides are measured square to the tilt from the photo's center and use the outermost tenth
+     * of the per-line positions, which keeps the book fully enclosed when it is slightly warped
+     * or the tilt is too small to correct.
      */
-    private fun refineEdges(image: SmallImage, region: Region): Region {
+    private fun refineEdges(image: SmallImage, region: Region, centerX: Float, centerY: Float): Placement {
         fun at(x: Int, y: Int) = image.pixels[y * image.width + x]
 
         // On each line, walks from `outer` toward `inner` and returns where the first sharp step
-        // lands, or null when the line has none. Steps span two pixels so blurred edges still
+        // lands, or nothing when the line has none. Steps span two pixels so blurred edges still
         // register, while gradual shadows stay well below the threshold.
         fun sidePositions(
             lines: IntRange,
@@ -243,23 +270,32 @@ internal object CoverBoundaryDetector {
             inner: Int,
             limit: Int,
             colorAt: (line: Int, position: Int) -> Int,
-        ): List<Int> {
+        ): List<EdgePoint> {
             val direction = if (inner >= outer) 1 else -1
+            // Points sit on the boundary between pixels, so the far side lands one pixel later.
+            val boundaryShift = if (direction > 0) 0 else 1
             return lines.mapNotNull { line ->
                 generateSequence(outer) { it + direction }
                     .takeWhile { it != inner && it + 2 * direction in 0 until limit }
                     .firstOrNull { position ->
                         contrast(colorAt(line, position), colorAt(line, position + 2 * direction)) >= MIN_EDGE_STEP
                     }
-                    ?.let { it + direction }
+                    ?.let { EdgePoint(along = line + 0.5f, across = (it + direction + boundaryShift).toFloat()) }
             }
         }
 
-        fun refined(positions: List<Int>, lineCount: Int, fallback: Int, outward: Boolean): Int {
-            if (positions.size < lineCount * MIN_EDGE_LINE_SHARE) return fallback
-            val sorted = positions.sorted()
-            val index = (sorted.size * EDGE_PERCENTILE).toInt()
-            return if (outward) sorted[sorted.size - 1 - index] else sorted[index]
+        // The median slope between well-separated points, so stray lines don't skew it.
+        fun slope(points: List<EdgePoint>): Float? {
+            val minGap = (points.last().along - points.first().along) / 4
+            val slopes = buildList {
+                for (first in points.indices) {
+                    for (second in first + 1 until points.size) {
+                        val gap = points[second].along - points[first].along
+                        if (gap >= minGap) add((points[second].across - points[first].across) / gap)
+                    }
+                }
+            }
+            return slopes.sorted().getOrNull(slopes.size / 2)
         }
 
         val width = region.right - region.left
@@ -271,23 +307,72 @@ internal object CoverBoundaryDetector {
         val maxX = image.width - 1
         val maxY = image.height - 1
 
-        val left = refined(
-            sidePositions(rows, (region.left - 2).coerceAtLeast(0), (region.left + bandX).coerceAtMost(maxX), image.width) { y, x -> at(x, y) },
-            rows.count(), region.left, outward = false,
+        val left = sidePositions(rows, (region.left - 2).coerceAtLeast(0), (region.left + bandX).coerceAtMost(maxX), image.width) { y, x -> at(x, y) }
+            .takeIf { it.size >= rows.count() * MIN_EDGE_LINE_SHARE }
+        val right = sidePositions(rows, (region.right + 1).coerceAtMost(maxX), (region.right - 1 - bandX).coerceAtLeast(0), image.width) { y, x -> at(x, y) }
+            .takeIf { it.size >= rows.count() * MIN_EDGE_LINE_SHARE }
+        val top = sidePositions(columns, (region.top - 2).coerceAtLeast(0), (region.top + bandY).coerceAtMost(maxY), image.height) { x, y -> at(x, y) }
+            .takeIf { it.size >= columns.count() * MIN_EDGE_LINE_SHARE }
+        val bottom = sidePositions(columns, (region.bottom + 1).coerceAtMost(maxY), (region.bottom - 1 - bandY).coerceAtLeast(0), image.height) { x, y -> at(x, y) }
+            .takeIf { it.size >= columns.count() * MIN_EDGE_LINE_SHARE }
+
+        // A clockwise tilt moves the left and right sides left going down, and the top and
+        // bottom sides down going right.
+        val sideTilts = listOfNotNull(
+            left?.let(::slope)?.let { atan(-it) },
+            right?.let(::slope)?.let { atan(-it) },
+            top?.let(::slope)?.let { atan(it) },
+            bottom?.let(::slope)?.let { atan(it) },
+        ).sorted()
+        val measuredTilt = when {
+            sideTilts.isEmpty() -> 0f
+            sideTilts.size % 2 == 1 -> sideTilts[sideTilts.size / 2]
+            else -> (sideTilts[sideTilts.size / 2 - 1] + sideTilts[sideTilts.size / 2]) / 2
+        }
+        val tilt = if (abs(measuredTilt) in MIN_TILT..MAX_TILT) measuredTilt else 0f
+
+        // Positions across and down the straightened photo, relative to its center.
+        val cos = cos(tilt)
+        val sin = sin(tilt)
+        fun straightX(x: Float, y: Float) = (x - centerX) * cos + (y - centerY) * sin
+        fun straightY(x: Float, y: Float) = -(x - centerX) * sin + (y - centerY) * cos
+
+        fun refined(positions: List<Float>?, fallback: Float, outward: Boolean): Float {
+            if (positions == null) return fallback
+            val sorted = positions.sorted()
+            val index = (sorted.size * EDGE_PERCENTILE).toInt()
+            return if (outward) sorted[sorted.size - 1 - index] else sorted[index]
+        }
+
+        val corners = listOf(
+            region.left to region.top,
+            region.right to region.top,
+            region.right to region.bottom,
+            region.left to region.bottom,
+        ).map { (x, y) -> x.toFloat() to y.toFloat() }
+        return Placement(
+            left = refined(
+                left?.map { straightX(it.across, it.along) },
+                corners.minOf { (x, y) -> straightX(x, y) },
+                outward = false,
+            ),
+            top = refined(
+                top?.map { straightY(it.along, it.across) },
+                corners.minOf { (x, y) -> straightY(x, y) },
+                outward = false,
+            ),
+            right = refined(
+                right?.map { straightX(it.across, it.along) },
+                corners.maxOf { (x, y) -> straightX(x, y) },
+                outward = true,
+            ),
+            bottom = refined(
+                bottom?.map { straightY(it.along, it.across) },
+                corners.maxOf { (x, y) -> straightY(x, y) },
+                outward = true,
+            ),
+            tilt = tilt,
         )
-        val right = refined(
-            sidePositions(rows, (region.right + 1).coerceAtMost(maxX), (region.right - 1 - bandX).coerceAtLeast(0), image.width) { y, x -> at(x, y) },
-            rows.count(), region.right - 1, outward = true,
-        ) + 1
-        val top = refined(
-            sidePositions(columns, (region.top - 2).coerceAtLeast(0), (region.top + bandY).coerceAtMost(maxY), image.height) { x, y -> at(x, y) },
-            columns.count(), region.top, outward = false,
-        )
-        val bottom = refined(
-            sidePositions(columns, (region.bottom + 1).coerceAtMost(maxY), (region.bottom - 1 - bandY).coerceAtLeast(0), image.height) { x, y -> at(x, y) },
-            columns.count(), region.bottom - 1, outward = true,
-        ) + 1
-        return region.copy(left = left, top = top, right = right, bottom = bottom)
     }
 
     private fun medianColor(colors: List<Int>): Int {
@@ -323,6 +408,21 @@ internal object CoverBoundaryDetector {
         val pixelCount: Int,
     )
 
+    /** Where a side's sharp step was found on one line, in shrunken-photo pixels. */
+    private class EdgePoint(val along: Float, val across: Float)
+
+    /**
+     * The book's sides in the straightened photo, in shrunken-photo pixels from its center, and
+     * its clockwise tilt in radians.
+     */
+    private class Placement(
+        val left: Float,
+        val top: Float,
+        val right: Float,
+        val bottom: Float,
+        val tilt: Float,
+    )
+
     private const val MIN_IMAGE_EDGE = 80
     private const val WORKING_EDGE = 256
     private const val OPENING_RADIUS = 2
@@ -343,4 +443,8 @@ internal object CoverBoundaryDetector {
     private const val MIN_COVER_ASPECT = 0.4f
     private const val MAX_COVER_ASPECT = 0.95f
     private const val MIN_FILL_RATIO = 0.8f
+
+    // Tilts below about half a degree aren't visible; beyond 15 degrees the edge search is unreliable.
+    private const val MIN_TILT = 0.008f
+    private const val MAX_TILT = 0.26f
 }

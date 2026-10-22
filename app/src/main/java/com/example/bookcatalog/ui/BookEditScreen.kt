@@ -214,6 +214,7 @@ fun BookEditScreen(
     var captureUri by remember { mutableStateOf<android.net.Uri?>(null) }
     var cropBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var detectedCrop by remember { mutableStateOf<NormalizedCrop?>(null) }
+    var cropRotation by remember { mutableStateOf(0f) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val cameraLauncher = rememberLauncherForActivityResult(
@@ -223,14 +224,19 @@ fun BookEditScreen(
         if (captured && source != null) {
             scope.launch {
                 try {
-                    val bitmap = withContext(Dispatchers.IO) {
-                        requireNotNull(coverStore).decodeForEditing(source)
+                    val store = requireNotNull(coverStore)
+                    val photo = withContext(Dispatchers.IO) {
+                        store.decodeForEditing(source)
                     }
-                    val crop = withContext(Dispatchers.Default) {
-                        CoverBoundaryDetector.detect(bitmap)
+                    val detected = withContext(Dispatchers.Default) {
+                        CoverBoundaryDetector.detect(photo)
                     }
-                    cropBitmap = bitmap
-                    detectedCrop = crop
+                    val rotation = detected?.rotationDegrees ?: 0f
+                    cropBitmap = withContext(Dispatchers.Default) {
+                        store.rotate(photo, rotation)
+                    }
+                    detectedCrop = detected?.crop
+                    cropRotation = rotation
                 } catch (exception: IOException) {
                     Log.e(TAG, "Could not load captured cover photo", exception)
                     coverError = "The photo couldn't be opened. Please take another photo."
@@ -295,6 +301,7 @@ fun BookEditScreen(
         cropBitmap?.recycle()
         cropBitmap = null
         detectedCrop = null
+        cropRotation = 0f
         captureFile?.delete()
         captureFile = null
         captureUri = null
@@ -306,13 +313,14 @@ fun BookEditScreen(
         scope.launch {
             try {
                 val newCover = withContext(Dispatchers.IO) {
-                    store.saveUserPhoto(source, crop)
+                    store.saveUserPhoto(source, crop, cropRotation)
                 }
                 draft = draft.copy(coverFile = newCover, coverSourceUrl = "user-photo")
                 coverError = null
                 cropBitmap?.recycle()
                 cropBitmap = null
                 detectedCrop = null
+                cropRotation = 0f
                 source.delete()
                 captureFile = null
                 captureUri = null
