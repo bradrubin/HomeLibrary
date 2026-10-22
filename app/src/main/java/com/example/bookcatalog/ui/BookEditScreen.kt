@@ -233,7 +233,7 @@ fun BookEditScreen(
                     }
                     val rotation = detected?.rotationDegrees ?: 0f
                     cropBitmap = withContext(Dispatchers.Default) {
-                        store.rotate(photo, rotation)
+                        store.rotate(photo, rotation).also { if (it !== photo) photo.recycle() }
                     }
                     detectedCrop = detected?.crop
                     cropRotation = rotation
@@ -307,6 +307,18 @@ fun BookEditScreen(
         captureUri = null
     }
 
+    fun rotateCrop(crop: NormalizedCrop) {
+        val bitmap = cropBitmap ?: return
+        val store = coverStore ?: return
+        scope.launch {
+            val rotated = withContext(Dispatchers.Default) { store.rotate(bitmap, 90f) }
+            // The old bitmap may still be drawing, so it is left for the garbage collector.
+            cropBitmap = rotated
+            detectedCrop = crop
+            cropRotation = (cropRotation + 90f) % 360f
+        }
+    }
+
     fun useCrop(crop: NormalizedCrop) {
         val source = captureFile ?: return
         val store = coverStore ?: return
@@ -350,6 +362,7 @@ fun BookEditScreen(
         CropPhotoScreen(
             bitmap = bitmap,
             initialCrop = detectedCrop,
+            onRotate = ::rotateCrop,
             onUseCrop = ::useCrop,
             onCancel = ::cancelCrop,
         )

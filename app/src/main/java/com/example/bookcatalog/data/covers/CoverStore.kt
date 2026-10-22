@@ -87,15 +87,18 @@ class CoverStore(
                 inSampleSize = sampleSize(bounds.outWidth, bounds.outHeight, EDITING_MAX_EDGE)
             },
         ) ?: throw IOException("Captured photo could not be decoded")
-        return rotate(orientBitmap(file, bitmap), rotationDegrees)
+        val oriented = orientBitmap(file, bitmap)
+        return rotate(oriented, rotationDegrees).also { if (it !== oriented) oriented.recycle() }
     }
 
-    /** Rotates clockwise, growing the bitmap so none of the photo is cut off. */
+    /**
+     * Rotates clockwise, growing the bitmap so none of the photo is cut off. The original is
+     * left for the caller to recycle, since it may still be on screen.
+     */
     fun rotate(bitmap: Bitmap, degrees: Float): Bitmap {
         if (degrees == 0f) return bitmap
         val matrix = Matrix().apply { setRotate(degrees) }
         return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
-            .also { if (it !== bitmap) bitmap.recycle() }
     }
 
     fun saveUserPhoto(file: File, crop: NormalizedCrop, rotationDegrees: Float = 0f): String {

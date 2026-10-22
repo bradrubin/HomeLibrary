@@ -8,7 +8,10 @@ import kotlin.math.cos
 import kotlin.math.max
 import kotlin.math.sin
 
-/** A detected cover: rotate the photo clockwise by [rotationDegrees], then crop it to [crop]. */
+/**
+ * A detected cover: rotate the photo clockwise by [rotationDegrees], then crop it to [crop]. A
+ * book found on its side is guessed to need a quarter turn clockwise, which may be the wrong way.
+ */
 internal data class DetectedCover(
     val crop: NormalizedCrop,
     val rotationDegrees: Float,
@@ -48,11 +51,19 @@ internal object CoverBoundaryDetector {
         val regionWidth = placement.right - placement.left
         val regionHeight = placement.bottom - placement.top
         if (regionWidth <= 0 || regionHeight <= 0) return null
-        val aspectRatio = regionWidth / regionHeight
+        // A book lying on its side in a landscape photo usually means the camera guessed the
+        // wrong orientation, which happens when the phone is held flat over the book.
+        val sideways = regionWidth > regionHeight && imageWidth > imageHeight
+        val aspectRatio = if (sideways) regionHeight / regionWidth else regionWidth / regionHeight
+        val (acrossRatio, downRatio) = if (sideways) {
+            MIN_HEIGHT_RATIO to MIN_WIDTH_RATIO
+        } else {
+            MIN_WIDTH_RATIO to MIN_HEIGHT_RATIO
+        }
         // Measured against the straightened box, so tilted books still count as solid rectangles.
         val fill = found.pixelCount / (regionWidth * regionHeight)
-        if (regionWidth < image.width * MIN_WIDTH_RATIO ||
-            regionHeight < image.height * MIN_HEIGHT_RATIO ||
+        if (regionWidth < image.width * acrossRatio ||
+            regionHeight < image.height * downRatio ||
             aspectRatio !in MIN_COVER_ASPECT..MAX_COVER_ASPECT ||
             fill < MIN_FILL_RATIO
         ) {
@@ -61,18 +72,32 @@ internal object CoverBoundaryDetector {
         // Size of the photo once rotated, matching the bounds Bitmap.createBitmap gives it.
         val cos = abs(cos(placement.tilt))
         val sin = abs(sin(placement.tilt))
-        val rotatedWidth = imageWidth * cos + imageHeight * sin
-        val rotatedHeight = imageWidth * sin + imageHeight * cos
+        var rotatedWidth = imageWidth * cos + imageHeight * sin
+        var rotatedHeight = imageWidth * sin + imageHeight * cos
+        var left = placement.left
+        var top = placement.top
+        var right = placement.right
+        var bottom = placement.bottom
+        var rotationDegrees = if (placement.tilt == 0f) 0f else -Math.toDegrees(placement.tilt.toDouble()).toFloat()
+        if (sideways) {
+            // Guess a further quarter turn clockwise, which moves each side one place around.
+            rotatedWidth = rotatedHeight.also { rotatedHeight = rotatedWidth }
+            left = -placement.bottom
+            top = placement.left
+            right = -placement.top
+            bottom = placement.right
+            rotationDegrees += 90f
+        }
         fun normalizedX(x: Float) = ((rotatedWidth / 2 + x * image.block) / rotatedWidth).coerceIn(0f, 1f)
         fun normalizedY(y: Float) = ((rotatedHeight / 2 + y * image.block) / rotatedHeight).coerceIn(0f, 1f)
         return DetectedCover(
             crop = NormalizedCrop(
-                left = normalizedX(placement.left),
-                top = normalizedY(placement.top),
-                right = normalizedX(placement.right),
-                bottom = normalizedY(placement.bottom),
+                left = normalizedX(left),
+                top = normalizedY(top),
+                right = normalizedX(right),
+                bottom = normalizedY(bottom),
             ),
-            rotationDegrees = if (placement.tilt == 0f) 0f else -Math.toDegrees(placement.tilt.toDouble()).toFloat(),
+            rotationDegrees = rotationDegrees,
         )
     }
 
@@ -263,7 +288,9 @@ internal object CoverBoundaryDetector {
 
         // On each line, walks from `outer` toward `inner` and returns where the first sharp step
         // lands, or nothing when the line has none. Steps span two pixels so blurred edges still
-        // register, while gradual shadows stay well below the threshold.
+        // register, while gradual shadows stay well below the threshold. Steps much weaker than
+        // the line's strongest are skipped, so textured backgrounds such as carpet don't stop
+        // the walk before the book.
         fun sidePositions(
             lines: IntRange,
             outer: Int,
@@ -275,12 +302,13 @@ internal object CoverBoundaryDetector {
             // Points sit on the boundary between pixels, so the far side lands one pixel later.
             val boundaryShift = if (direction > 0) 0 else 1
             return lines.mapNotNull { line ->
-                generateSequence(outer) { it + direction }
+                val steps = generateSequence(outer) { it + direction }
                     .takeWhile { it != inner && it + 2 * direction in 0 until limit }
-                    .firstOrNull { position ->
-                        contrast(colorAt(line, position), colorAt(line, position + 2 * direction)) >= MIN_EDGE_STEP
-                    }
-                    ?.let { EdgePoint(along = line + 0.5f, across = (it + direction + boundaryShift).toFloat()) }
+                    .map { position -> position to contrast(colorAt(line, position), colorAt(line, position + 2 * direction)) }
+                    .toList()
+                val threshold = max(MIN_EDGE_STEP, ((steps.maxOfOrNull { it.second } ?: 0) * STRONG_EDGE_SHARE).toInt())
+                steps.firstOrNull { it.second >= threshold }
+                    ?.let { EdgePoint(along = line + 0.5f, across = (it.first + direction + boundaryShift).toFloat()) }
             }
         }
 
@@ -428,6 +456,7 @@ internal object CoverBoundaryDetector {
     private const val OPENING_RADIUS = 2
     private const val MEDIAN_RADIUS = 2
     private const val MIN_EDGE_STEP = 30
+    private const val STRONG_EDGE_SHARE = 0.5f
     private const val EDGE_BAND_RATIO = 0.25f
     private const val MIN_EDGE_BAND = 3
     private const val MIN_EDGE_LINE_SHARE = 0.3f

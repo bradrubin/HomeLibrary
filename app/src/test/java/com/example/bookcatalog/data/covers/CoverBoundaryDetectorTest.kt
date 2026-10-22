@@ -86,6 +86,21 @@ class CoverBoundaryDetectorTest {
     }
 
     @Test
+    fun turnsSidewaysBookUpright() {
+        // The 400x600 book from the first test, in a photo saved turned a quarter turn left.
+        val detected = CoverBoundaryDetector.detect(600, 400) { x, y ->
+            if (x in 60 until 540 && y in 80 until 320) WHITE else BLACK
+        }
+
+        requireNotNull(detected)
+        assertEquals(90f, detected.rotationDegrees)
+        assertEquals(0.2f, detected.crop.left, 0.02f)
+        assertEquals(0.1f, detected.crop.top, 0.02f)
+        assertEquals(0.8f, detected.crop.right, 0.02f)
+        assertEquals(0.9f, detected.crop.bottom, 0.02f)
+    }
+
+    @Test
     fun ignoresThinVeinTouchingBook() {
         val crop = CoverBoundaryDetector.detect(1200, 1600) { x, y ->
             when {
