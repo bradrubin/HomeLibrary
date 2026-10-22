@@ -49,13 +49,17 @@ class HomeChatBisacSubjectMapperTest {
     }
 
     @Test
-    fun rejectsHeadingWithNoncanonicalMajorHeadingCase() {
-        assertThrows(IllegalArgumentException::class.java) {
+    fun uppercasesNoncanonicalMajorHeadingCase() {
+        assertEquals(
+            listOf(
+                "BIOGRAPHY & AUTOBIOGRAPHY / Personal Memoirs",
+                "COOKING / Italian",
+            ),
             HomeChatBisacSubjectMapper.parseSubjects(
-                """{"subjects":["History / Middle East / General"]}""",
+                """{"subjects":["BIography & Autobiography / Personal Memoirs","Cooking / Italian"]}""",
                 moshi,
-            )
-        }
+            ),
+        )
     }
 
     @Test

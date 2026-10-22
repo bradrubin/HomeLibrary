@@ -68,7 +68,7 @@ class HomeChatBisacSubjectMapper(
             val parsed = moshi.adapter(BisacSubjectResponse::class.java).fromJson(content)
                 ?: throw IllegalArgumentException("The local model returned an empty response.")
             val headings = parsed.subjects.orEmpty()
-                .map(String::trim)
+                .map { uppercaseMajorHeading(it.trim()) }
                 .filter(::isValidFullHeading)
                 .distinct()
                 .take(MAX_SUBJECTS)
@@ -76,6 +76,12 @@ class HomeChatBisacSubjectMapper(
                 throw IllegalArgumentException("The local model returned no valid BISAC headings.")
             }
             return headings
+        }
+
+        // BISAC major headings are always uppercase, but the model often returns them in title case.
+        private fun uppercaseMajorHeading(value: String): String {
+            val major = value.substringBefore(" / ")
+            return major.uppercase() + value.removePrefix(major)
         }
 
         private fun isValidFullHeading(value: String): Boolean {
