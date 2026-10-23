@@ -140,6 +140,9 @@ class BookEditViewModel(
     suspend fun mapSubjectsToBisac(book: Book): List<String> =
         metadataRepository.mapSubjectsToBisac(book)
 
+    suspend fun lookup(isbn13: String): MetadataLookupResult =
+        metadataRepository.lookup(isbn13)
+
     suspend fun writeDescription(book: Book): String? =
         metadataRepository.writeDescription(book)
 

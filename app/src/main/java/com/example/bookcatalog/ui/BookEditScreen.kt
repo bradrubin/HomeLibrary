@@ -5,6 +5,8 @@ import android.os.Parcelable
 import android.util.Log
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -29,6 +31,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -55,7 +58,10 @@ import com.example.bookcatalog.data.covers.CoverStore
 import com.example.bookcatalog.data.covers.CoverBoundaryDetector
 import com.example.bookcatalog.data.covers.NormalizedCrop
 import com.example.bookcatalog.data.covers.PhotoTransform
+import com.example.bookcatalog.data.io.AmazonImporter
 import com.example.bookcatalog.data.metadata.ModelException
+import com.example.bookcatalog.domain.IsbnUtils
+import kotlinx.coroutines.Job
 import com.example.bookcatalog.domain.AuthorNames
 import com.example.bookcatalog.domain.BookFormat
 import com.example.bookcatalog.domain.Language
@@ -112,7 +118,7 @@ private data class BookDraft(
         description = description.optional(),
         coverFile = coverFile.optional() ?: existingBook?.coverFile,
         coverSourceUrl = coverSourceUrl.optional() ?: existingBook?.coverSourceUrl,
-        dataSource = existingBook?.dataSource ?: dataSource.optional(),
+        dataSource = dataSource.optional() ?: existingBook?.dataSource,
         location = location.optional(),
         notes = notes.optional(),
         rating = rating.toIntOrNull(),
@@ -181,6 +187,10 @@ fun BookEditScreen(
     var descriptionStatus by rememberSaveable(bookId) { mutableStateOf<ModelStatus?>(null) }
     // Not saved: the request is cancelled if the screen is recreated, so it must not stay busy.
     var runningTask by remember { mutableStateOf<ModelTask?>(null) }
+    var isbnStatus by rememberSaveable(bookId) { mutableStateOf<ModelStatus?>(null) }
+    // The ISBN the details were last filled in from, so only a new ISBN starts a lookup.
+    var lookedUpIsbn by rememberSaveable(bookId) { mutableStateOf<String?>(null) }
+    var isbnLookup by remember { mutableStateOf<Job?>(null) }
     // Saved, so a photo survives the screen being recreated while the camera or cropper is open.
     var captureFile by rememberSaveable(stateSaver = FileSaver) { mutableStateOf<File?>(null) }
     var showCamera by rememberSaveable { mutableStateOf(false) }
@@ -234,7 +244,7 @@ fun BookEditScreen(
                 cropping = true
             } catch (exception: IOException) {
                 Log.e(TAG, "Could not load captured cover photo", exception)
-                closeCamera("The photo couldn't be opened. Please take another photo.")
+                closeCamera("The image couldn't be opened. Please try another.")
             }
         }
     }
@@ -298,6 +308,80 @@ fun BookEditScreen(
                 coverError = "The crop wasn't valid. Adjust it and try again."
             }
         }
+    }
+
+    /** Copies a chosen image to the camera folder, then crops it just like a cover photo. */
+    fun useChosenImage(uri: android.net.Uri) {
+        scope.launch {
+            try {
+                val file = withContext(Dispatchers.IO) {
+                    val cameraDirectory = File(context.cacheDir, "camera-photos").apply {
+                        if (!exists() && !mkdirs()) throw IOException("Could not create camera folder")
+                    }
+                    val target = File(cameraDirectory, "cover-${UUID.randomUUID()}.jpg")
+                    val input = context.contentResolver.openInputStream(uri)
+                        ?: throw IOException("The image couldn't be opened")
+                    input.use { stream -> target.outputStream().use { stream.copyTo(it) } }
+                    target
+                }
+                captureFile = file
+                coverError = null
+                onPhotoCaptured()
+            } catch (exception: IOException) {
+                Log.e(TAG, "Could not copy chosen cover image", exception)
+                coverError = "The image couldn't be opened. Please choose another."
+            } catch (exception: SecurityException) {
+                Log.e(TAG, "Not allowed to read chosen cover image", exception)
+                coverError = "The app wasn't allowed to open that image."
+            }
+        }
+    }
+
+    /**
+     * Fills in a book that came from an Amazon book list from a new ISBN, as adding it by ISBN
+     * would, keeping its ASIN, format, read status and the user's own location, notes, rating
+     * and date added.
+     */
+    fun lookUpIsbn(isbn13: String) {
+        lookedUpIsbn = isbn13
+        isbnLookup?.cancel()
+        isbnLookup = scope.launch {
+            isbnStatus = ModelStatus("Looking up ISBN $isbn13. This can take a minute…", isError = false)
+            val result = viewModel.lookup(isbn13)
+            val found = result.book.takeIf { result.message == null }
+            if (found == null) {
+                isbnStatus = ModelStatus(result.message ?: "No book details were found.", isError = true)
+                return@launch
+            }
+            val current = draft
+            draft = BookDraft.from(found).copy(
+                asin = current.asin,
+                format = current.format,
+                readStatus = current.readStatus,
+                location = current.location,
+                notes = current.notes,
+                rating = current.rating,
+                dateAdded = current.dateAdded,
+                coverFile = found.coverFile ?: current.coverFile,
+                coverSourceUrl = found.coverSourceUrl ?: current.coverSourceUrl,
+                dataSource = listOfNotNull(AmazonImporter.SOURCE, found.dataSource).joinToString("+"),
+            )
+            isbnStatus = ModelStatus(
+                listOfNotNull("Details filled in from ISBN $isbn13.", result.warning).joinToString(" "),
+                isError = result.warning != null,
+            )
+        }
+    }
+
+    /** Starts a lookup when an Amazon book's ISBN is changed to a different valid one. */
+    fun onIsbnEdited(value: String) {
+        if (draft.asin.isBlank()) return
+        val isbn13 = IsbnUtils.toIsbn13(value) ?: return
+        if (isbn13 != (lookedUpIsbn ?: originalBook?.isbn13)) lookUpIsbn(isbn13)
+    }
+
+    val chooseImage = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let(::useChosenImage)
     }
 
     fun runModelTask(task: ModelTask, setStatus: (ModelStatus?) -> Unit, work: suspend () -> ModelStatus) {
@@ -446,12 +530,21 @@ fun BookEditScreen(
                     contentScale = ContentScale.Fit,
                 )
             }
-            Button(
-                onClick = ::takeCoverPhoto,
-                enabled = captureFile == null,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(if (draft.coverFile.isBlank()) "Take cover photo" else "Replace cover photo")
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Button(
+                    onClick = ::takeCoverPhoto,
+                    enabled = captureFile == null,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text(if (draft.coverFile.isBlank()) "Take cover photo" else "Replace cover photo")
+                }
+                OutlinedButton(
+                    onClick = { chooseImage.launch(arrayOf("image/*")) },
+                    enabled = captureFile == null,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("Choose image")
+                }
             }
             BookTextField("Title", draft.title, { draft = draft.copy(title = it) }, required = true, capitalization = KeyboardCapitalization.Words)
             BookTextField("Subtitle", draft.subtitle, { draft = draft.copy(subtitle = it) }, capitalization = KeyboardCapitalization.Words)
@@ -465,16 +558,28 @@ fun BookEditScreen(
             BookTextField(
                 "ISBN-13",
                 draft.isbn13,
-                { draft = draft.copy(isbn13 = it) },
+                {
+                    draft = draft.copy(isbn13 = it)
+                    onIsbnEdited(it)
+                },
                 keyboardType = KeyboardType.Number,
             )
             BookTextField(
                 "ISBN-10",
                 draft.isbn10,
-                { draft = draft.copy(isbn10 = it) },
+                {
+                    draft = draft.copy(isbn10 = it)
+                    onIsbnEdited(it)
+                },
                 keyboardType = KeyboardType.Number,
-                trailingIcon = { IsbnCheckXButton(draft.isbn10) { draft = draft.copy(isbn10 = it) } },
+                trailingIcon = {
+                    IsbnCheckXButton(draft.isbn10) {
+                        draft = draft.copy(isbn10 = it)
+                        onIsbnEdited(it)
+                    }
+                },
             )
+            isbnStatus?.let { ModelStatusText(it) }
             BookTextField(
                 "ASIN",
                 draft.asin,
