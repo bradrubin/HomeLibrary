@@ -7,6 +7,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -30,6 +35,8 @@ import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -47,7 +54,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
@@ -191,6 +201,9 @@ fun BookEditScreen(
     // The ISBN the details were last filled in from, so only a new ISBN starts a lookup.
     var lookedUpIsbn by rememberSaveable(bookId) { mutableStateOf<String?>(null) }
     var isbnLookup by remember { mutableStateOf<Job?>(null) }
+    // What a running ISBN lookup is doing; the form is covered and can't be saved until it ends.
+    var isbnLookupStep by remember { mutableStateOf<String?>(null) }
+    val keyboard = LocalSoftwareKeyboardController.current
     // Saved, so a photo survives the screen being recreated while the camera or cropper is open.
     var captureFile by rememberSaveable(stateSaver = FileSaver) { mutableStateOf<File?>(null) }
     var showCamera by rememberSaveable { mutableStateOf(false) }
@@ -351,68 +364,83 @@ fun BookEditScreen(
     fun lookUpIsbn(isbn13: String) {
         lookedUpIsbn = isbn13
         isbnLookup?.cancel()
+        keyboard?.hide()
         isbnLookup = scope.launch {
-            isbnStatus = ModelStatus("Looking up ISBN $isbn13…", isError = false)
-            val details = viewModel.fetchDetails(isbn13)
-            val found = details.book
-            if (found == null) {
-                isbnStatus = ModelStatus(
-                    if (details.allSourcesFailed) {
-                        "Couldn’t connect to the book lookup services. Check your internet connection and try again."
+            try {
+                isbnStatus = null
+                isbnLookupStep = "Looking up ISBN $isbn13…"
+                val details = viewModel.fetchDetails(isbn13)
+                val found = details.book
+                if (found == null) {
+                    isbnStatus = ModelStatus(
+                        if (details.allSourcesFailed) {
+                            "Couldn’t connect to the book lookup services. Check your internet connection and try again."
+                        } else {
+                            "No book details were found for ISBN $isbn13."
+                        },
+                        isError = true,
+                    )
+                    return@launch
+                }
+                val current = draft
+                draft = BookDraft.from(found).copy(
+                    asin = current.asin,
+                    format = current.format,
+                    readStatus = current.readStatus,
+                    location = current.location,
+                    notes = current.notes,
+                    rating = current.rating,
+                    dateAdded = current.dateAdded,
+                    coverFile = found.coverFile ?: current.coverFile,
+                    coverSourceUrl = found.coverSourceUrl ?: current.coverSourceUrl,
+                    dataSource = listOfNotNull(AmazonImporter.SOURCE, found.dataSource).joinToString("+"),
+                )
+                val problems = mutableListOf<String>()
+                if (found.coverFile == null) {
+                    problems += if (details.coverDownloadFailed) {
+                        "Its cover couldn't be downloaded."
                     } else {
-                        "No book details were found for ISBN $isbn13."
-                    },
-                    isError = true,
-                )
-                return@launch
-            }
-            val current = draft
-            draft = BookDraft.from(found).copy(
-                asin = current.asin,
-                format = current.format,
-                readStatus = current.readStatus,
-                location = current.location,
-                notes = current.notes,
-                rating = current.rating,
-                dateAdded = current.dateAdded,
-                coverFile = found.coverFile ?: current.coverFile,
-                coverSourceUrl = found.coverSourceUrl ?: current.coverSourceUrl,
-                dataSource = listOfNotNull(AmazonImporter.SOURCE, found.dataSource).joinToString("+"),
-            )
-            val problems = mutableListOf<String>()
-            if (found.coverFile == null) {
-                problems += if (details.coverDownloadFailed) {
-                    "Its cover couldn't be downloaded."
-                } else {
-                    "No cover was found for this ISBN."
+                        "No cover was found for this ISBN."
+                    }
                 }
-            }
-            fun report(pending: String? = null) {
-                isbnStatus = ModelStatus(
-                    (listOf("Details filled in from ISBN $isbn13.") + problems + listOfNotNull(pending)).joinToString(" "),
-                    isError = problems.isNotEmpty(),
-                )
-            }
+                fun report() {
+                    isbnStatus = ModelStatus(
+                        (listOf("Details filled in from ISBN $isbn13.") + problems).joinToString(" "),
+                        isError = problems.isNotEmpty(),
+                    )
+                }
+                report()
 
-            // Only the subjects and description change from here, so other edits made meanwhile are kept.
-            if (viewModel.canMapSubjects && !details.hasPublisherBisac) {
-                report("Mapping subjects to BISAC…")
-                try {
-                    val headings = viewModel.mapSubjectsToBisac(draft.toBook(originalBook))
-                    if (headings.isNotEmpty()) draft = draft.copy(subjects = headings.joinToString("; "))
-                } catch (exception: ModelException) {
-                    problems += "Could not map subjects to BISAC."
+                // Only the subjects and description change from here, so other edits made meanwhile are kept.
+                if (viewModel.canMapSubjects && !details.hasPublisherBisac) {
+                    isbnLookupStep = "Mapping subjects to BISAC…"
+                    try {
+                        val headings = viewModel.mapSubjectsToBisac(draft.toBook(originalBook))
+                        if (headings.isNotEmpty()) draft = draft.copy(subjects = headings.joinToString("; "))
+                    } catch (exception: ModelException) {
+                        problems += "Could not map subjects to BISAC."
+                    }
+                }
+                if (viewModel.canWriteDescriptions) {
+                    isbnLookupStep = "Writing a description…"
+                    try {
+                        viewModel.writeDescription(draft.toBook(originalBook))?.let { draft = draft.copy(description = it) }
+                    } catch (exception: ModelException) {
+                        problems += "Could not write a description."
+                    }
+                }
+                report()
+            } finally {
+                // A newer lookup may have replaced this one, and owns the progress card now.
+                if (isbnLookup === coroutineContext[Job]) {
+                    isbnLookupStep = null
+                    if (isbnStatus == null) {
+                        // Stopped before any details arrived, so typing the same ISBN tries again.
+                        lookedUpIsbn = null
+                        isbnStatus = ModelStatus("Lookup stopped before any details were found.", isError = true)
+                    }
                 }
             }
-            if (viewModel.canWriteDescriptions) {
-                report("Writing a description…")
-                try {
-                    viewModel.writeDescription(draft.toBook(originalBook))?.let { draft = draft.copy(description = it) }
-                } catch (exception: ModelException) {
-                    problems += "Could not write a description."
-                }
-            }
-            report()
         }
     }
 
@@ -456,6 +484,8 @@ fun BookEditScreen(
         }
         initialized = true
     }
+
+    BackHandler(enabled = isbnLookupStep != null) { isbnLookup?.cancel() }
 
     captureFile?.takeIf { showCamera }?.let { file ->
         CameraCaptureScreen(
@@ -504,7 +534,7 @@ fun BookEditScreen(
             )
         },
         bottomBar = {
-            if (hasChanges) Row(
+            if (hasChanges && isbnLookupStep == null) Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .imePadding()
@@ -548,182 +578,186 @@ fun BookEditScreen(
             }
         },
     ) { contentPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(contentPadding)
-                .verticalScroll(scrollState)
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            formError?.let {
-                Text(it, color = MaterialTheme.colorScheme.error)
-            }
-            lookupNotice?.let {
-                Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            lookupProblem?.let {
-                Text(it, color = MaterialTheme.colorScheme.error)
-            }
-            coverError?.let {
-                Text(it, color = MaterialTheme.colorScheme.error)
-            }
-            draft.coverFile.takeIf(String::isNotBlank)?.let { coverFile ->
-                AsyncImage(
-                    model = File(coverDirectory, coverFile),
-                    contentDescription = "Book cover",
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 8.dp),
-                    contentScale = ContentScale.Fit,
+        Box(modifier = Modifier.fillMaxSize().padding(contentPadding)) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(scrollState)
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                formError?.let {
+                    Text(it, color = MaterialTheme.colorScheme.error)
+                }
+                lookupNotice?.let {
+                    Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                lookupProblem?.let {
+                    Text(it, color = MaterialTheme.colorScheme.error)
+                }
+                coverError?.let {
+                    Text(it, color = MaterialTheme.colorScheme.error)
+                }
+                draft.coverFile.takeIf(String::isNotBlank)?.let { coverFile ->
+                    AsyncImage(
+                        model = File(coverDirectory, coverFile),
+                        contentDescription = "Book cover",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 8.dp),
+                        contentScale = ContentScale.Fit,
+                    )
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Button(
+                        onClick = ::takeCoverPhoto,
+                        enabled = captureFile == null,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text(if (draft.coverFile.isBlank()) "Take cover photo" else "Replace cover photo")
+                    }
+                    OutlinedButton(
+                        onClick = { chooseImage.launch(arrayOf("image/*")) },
+                        enabled = captureFile == null,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("Choose image")
+                    }
+                }
+                BookTextField("Title", draft.title, { draft = draft.copy(title = it) }, required = true, capitalization = KeyboardCapitalization.Words)
+                BookTextField("Subtitle", draft.subtitle, { draft = draft.copy(subtitle = it) }, capitalization = KeyboardCapitalization.Words)
+                BookTextField(
+                    "Authors",
+                    draft.authors,
+                    { draft = draft.copy(authors = it) },
+                    placeholder = "e.g. Jane Doe; John Smith",
+                    capitalization = KeyboardCapitalization.Words,
                 )
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Button(
-                    onClick = ::takeCoverPhoto,
-                    enabled = captureFile == null,
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text(if (draft.coverFile.isBlank()) "Take cover photo" else "Replace cover photo")
-                }
-                OutlinedButton(
-                    onClick = { chooseImage.launch(arrayOf("image/*")) },
-                    enabled = captureFile == null,
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text("Choose image")
-                }
-            }
-            BookTextField("Title", draft.title, { draft = draft.copy(title = it) }, required = true, capitalization = KeyboardCapitalization.Words)
-            BookTextField("Subtitle", draft.subtitle, { draft = draft.copy(subtitle = it) }, capitalization = KeyboardCapitalization.Words)
-            BookTextField(
-                "Authors",
-                draft.authors,
-                { draft = draft.copy(authors = it) },
-                placeholder = "e.g. Jane Doe; John Smith",
-                capitalization = KeyboardCapitalization.Words,
-            )
-            BookTextField(
-                "ISBN-13",
-                draft.isbn13,
-                {
-                    draft = draft.copy(isbn13 = it)
-                    onIsbnEdited(it, length = 13)
-                },
-                keyboardType = KeyboardType.Number,
-            )
-            BookTextField(
-                "ISBN-10",
-                draft.isbn10,
-                {
-                    draft = draft.copy(isbn10 = it)
-                    onIsbnEdited(it, length = 10)
-                },
-                keyboardType = KeyboardType.Number,
-                trailingIcon = {
-                    IsbnCheckXButton(draft.isbn10) {
+                BookTextField(
+                    "ISBN-13",
+                    draft.isbn13,
+                    {
+                        draft = draft.copy(isbn13 = it)
+                        onIsbnEdited(it, length = 13)
+                    },
+                    keyboardType = KeyboardType.Number,
+                )
+                BookTextField(
+                    "ISBN-10",
+                    draft.isbn10,
+                    {
                         draft = draft.copy(isbn10 = it)
                         onIsbnEdited(it, length = 10)
-                    }
-                },
-            )
-            isbnStatus?.let { ModelStatusText(it) }
-            BookTextField(
-                "ASIN",
-                draft.asin,
-                { draft = draft.copy(asin = it) },
-                keyboardType = KeyboardType.Ascii,
-                capitalization = KeyboardCapitalization.Characters,
-            )
-            BookTextField("Publisher", draft.publisher, { draft = draft.copy(publisher = it) }, capitalization = KeyboardCapitalization.Words)
-            BookTextField(
-                "Publication year",
-                draft.publishedDate,
-                { draft = draft.copy(publishedDate = it) },
-                keyboardType = KeyboardType.Number,
-            )
-            BookTextField(
-                "Page count",
-                draft.pageCount,
-                { draft = draft.copy(pageCount = it) },
-                keyboardType = KeyboardType.Number,
-            )
-            ChoiceField(
-                label = "Format",
-                value = draft.format,
-                choices = listOf("" to "Not set") + BookFormat.choices.map { it to it },
-            ) { draft = draft.copy(format = it) }
-            BookTextField("Language", draft.language, { draft = draft.copy(language = it) }, capitalization = KeyboardCapitalization.Words)
-            BookTextField("Subjects (BISAC)", draft.subjects, { draft = draft.copy(subjects = it) }, capitalization = KeyboardCapitalization.Words)
-            Button(
-                onClick = {
-                    runModelTask(ModelTask.SUBJECTS, { subjectStatus = it }) {
-                        val subjects = viewModel.mapSubjectsToBisac(draft.toBook(originalBook))
-                        if (subjects.isEmpty()) {
-                            ModelStatus("No confident BISAC classification was found. Nothing was changed.", isError = true)
-                        } else {
-                            draft = draft.copy(subjects = subjects.joinToString("; "))
-                            ModelStatus("Subjects mapped to BISAC.", isError = false)
+                    },
+                    keyboardType = KeyboardType.Number,
+                    trailingIcon = {
+                        IsbnCheckXButton(draft.isbn10) {
+                            draft = draft.copy(isbn10 = it)
+                            onIsbnEdited(it, length = 10)
                         }
-                    }
-                },
-                enabled = runningTask == null,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(if (runningTask == ModelTask.SUBJECTS) "Mapping subjects…" else "Map subjects to BISAC")
-            }
-            subjectStatus?.let { ModelStatusText(it) }
-            BookTextField(
-                "Description",
-                draft.description,
-                { draft = draft.copy(description = it) },
-                singleLine = false,
-                capitalization = KeyboardCapitalization.Sentences,
-            )
-            Button(
-                onClick = {
-                    runModelTask(ModelTask.DESCRIPTION, { descriptionStatus = it }) {
-                        val hadDescription = draft.description.isNotBlank()
-                        val description = viewModel.writeDescription(draft.toBook(originalBook))
-                        if (description == null) {
-                            ModelStatus("The book couldn't be identified. Nothing was changed.", isError = true)
-                        } else {
-                            draft = draft.copy(description = description)
-                            ModelStatus(if (hadDescription) "Description summarized." else "Description written.", isError = false)
-                        }
-                    }
-                },
-                enabled = runningTask == null,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(
-                    when {
-                        runningTask == ModelTask.DESCRIPTION -> "Writing description…"
-                        draft.description.isBlank() -> "Write description"
-                        else -> "Summarize description"
                     },
                 )
+                isbnStatus?.let { ModelStatusText(it) }
+                BookTextField(
+                    "ASIN",
+                    draft.asin,
+                    { draft = draft.copy(asin = it) },
+                    keyboardType = KeyboardType.Ascii,
+                    capitalization = KeyboardCapitalization.Characters,
+                )
+                BookTextField("Publisher", draft.publisher, { draft = draft.copy(publisher = it) }, capitalization = KeyboardCapitalization.Words)
+                BookTextField(
+                    "Publication year",
+                    draft.publishedDate,
+                    { draft = draft.copy(publishedDate = it) },
+                    keyboardType = KeyboardType.Number,
+                )
+                BookTextField(
+                    "Page count",
+                    draft.pageCount,
+                    { draft = draft.copy(pageCount = it) },
+                    keyboardType = KeyboardType.Number,
+                )
+                ChoiceField(
+                    label = "Format",
+                    value = draft.format,
+                    choices = listOf("" to "Not set") + BookFormat.choices.map { it to it },
+                ) { draft = draft.copy(format = it) }
+                BookTextField("Language", draft.language, { draft = draft.copy(language = it) }, capitalization = KeyboardCapitalization.Words)
+                BookTextField("Subjects (BISAC)", draft.subjects, { draft = draft.copy(subjects = it) }, capitalization = KeyboardCapitalization.Words)
+                Button(
+                    onClick = {
+                        runModelTask(ModelTask.SUBJECTS, { subjectStatus = it }) {
+                            val subjects = viewModel.mapSubjectsToBisac(draft.toBook(originalBook))
+                            if (subjects.isEmpty()) {
+                                ModelStatus("No confident BISAC classification was found. Nothing was changed.", isError = true)
+                            } else {
+                                draft = draft.copy(subjects = subjects.joinToString("; "))
+                                ModelStatus("Subjects mapped to BISAC.", isError = false)
+                            }
+                        }
+                    },
+                    enabled = runningTask == null,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(if (runningTask == ModelTask.SUBJECTS) "Mapping subjects…" else "Map subjects to BISAC")
+                }
+                subjectStatus?.let { ModelStatusText(it) }
+                BookTextField(
+                    "Description",
+                    draft.description,
+                    { draft = draft.copy(description = it) },
+                    singleLine = false,
+                    capitalization = KeyboardCapitalization.Sentences,
+                )
+                Button(
+                    onClick = {
+                        runModelTask(ModelTask.DESCRIPTION, { descriptionStatus = it }) {
+                            val hadDescription = draft.description.isNotBlank()
+                            val description = viewModel.writeDescription(draft.toBook(originalBook))
+                            if (description == null) {
+                                ModelStatus("The book couldn't be identified. Nothing was changed.", isError = true)
+                            } else {
+                                draft = draft.copy(description = description)
+                                ModelStatus(if (hadDescription) "Description summarized." else "Description written.", isError = false)
+                            }
+                        }
+                    },
+                    enabled = runningTask == null,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        when {
+                            runningTask == ModelTask.DESCRIPTION -> "Writing description…"
+                            draft.description.isBlank() -> "Write description"
+                            else -> "Summarize description"
+                        },
+                    )
+                }
+                descriptionStatus?.let { ModelStatusText(it) }
+                BookTextField("Location", draft.location, { draft = draft.copy(location = it) }, capitalization = KeyboardCapitalization.Sentences)
+                BookTextField(
+                    "Notes",
+                    draft.notes,
+                    { draft = draft.copy(notes = it) },
+                    singleLine = false,
+                    capitalization = KeyboardCapitalization.Sentences,
+                )
+                BookTextField(
+                    "Rating (0–5)",
+                    draft.rating,
+                    { draft = draft.copy(rating = it) },
+                    keyboardType = KeyboardType.Number,
+                )
+                ChoiceField(
+                    label = "Read status",
+                    value = draft.readStatus,
+                    choices = ReadStatus.choices.map { it to it.replaceFirstChar(Char::uppercase) },
+                ) { draft = draft.copy(readStatus = it) }
             }
-            descriptionStatus?.let { ModelStatusText(it) }
-            BookTextField("Location", draft.location, { draft = draft.copy(location = it) }, capitalization = KeyboardCapitalization.Sentences)
-            BookTextField(
-                "Notes",
-                draft.notes,
-                { draft = draft.copy(notes = it) },
-                singleLine = false,
-                capitalization = KeyboardCapitalization.Sentences,
-            )
-            BookTextField(
-                "Rating (0–5)",
-                draft.rating,
-                { draft = draft.copy(rating = it) },
-                keyboardType = KeyboardType.Number,
-            )
-            ChoiceField(
-                label = "Read status",
-                value = draft.readStatus,
-                choices = ReadStatus.choices.map { it to it.replaceFirstChar(Char::uppercase) },
-            ) { draft = draft.copy(readStatus = it) }
+            isbnLookupStep?.let { step ->
+                IsbnLookupOverlay(step, onStop = { isbnLookup?.cancel() })
+            }
         }
     }
 
@@ -844,6 +878,35 @@ private fun ChoiceField(
 }
 
 private val FileSaver = Saver<File?, String>(save = { it?.path }, restore = ::File)
+
+/** Dims the form and blocks touches while an ISBN lookup fills it in. */
+@Composable
+private fun IsbnLookupOverlay(step: String, onStop: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.5f))
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {},
+        contentAlignment = Alignment.Center,
+    ) {
+        Card(modifier = Modifier.padding(32.dp)) {
+            Column(
+                modifier = Modifier.padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                CircularProgressIndicator()
+                Text(step, style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    "This can take a minute. Stopping keeps what has been filled in so far.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                TextButton(onClick = onStop) { Text("Stop lookup") }
+            }
+        }
+    }
+}
 
 @Composable
 private fun ModelStatusText(status: ModelStatus) {
