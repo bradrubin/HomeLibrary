@@ -18,6 +18,7 @@ import com.example.bookcatalog.data.io.LibraryImporter
 import com.example.bookcatalog.data.io.TransferProgress
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import com.example.bookcatalog.domain.LibraryFilter
 import com.example.bookcatalog.domain.LibraryQuery
 import com.example.bookcatalog.domain.SortOrder
 import kotlinx.coroutines.channels.Channel
@@ -38,6 +39,7 @@ import java.io.OutputStream
 data class LibraryControls(
     val query: String = "",
     val sort: SortOrder = SortOrder.TITLE,
+    val filter: LibraryFilter = LibraryFilter(),
     val grid: Boolean = false,
     val selecting: Boolean = false,
     val selectedIds: Set<Long> = emptySet(),
@@ -47,6 +49,9 @@ data class LibraryUiState(
     /** The books matching the search, in sort order. */
     val books: List<Book> = emptyList(),
     val libraryIsEmpty: Boolean = true,
+    /** How many books in the whole library have each format and read status, to filter by. */
+    val formatCounts: Map<String, Int> = emptyMap(),
+    val readStatusCounts: Map<String, Int> = emptyMap(),
     val controls: LibraryControls = LibraryControls(),
 )
 
@@ -64,8 +69,10 @@ class LibraryViewModel(
     val state: StateFlow<LibraryUiState> = combine(repository.books, controls) { books, controls ->
         val ids = books.mapTo(HashSet(), Book::id)
         LibraryUiState(
-            books = LibraryQuery.apply(books, controls.query, controls.sort),
+            books = LibraryQuery.apply(books, controls.query, controls.sort, controls.filter),
             libraryIsEmpty = books.isEmpty(),
+            formatCounts = books.groupingBy(LibraryFilter::formatOf).eachCount(),
+            readStatusCounts = books.groupingBy(LibraryFilter::readStatusOf).eachCount(),
             // Books deleted elsewhere drop out of the selection.
             controls = controls.copy(selectedIds = controls.selectedIds.filterTo(HashSet()) { it in ids }),
         )
@@ -78,6 +85,8 @@ class LibraryViewModel(
     fun setQuery(query: String) = controls.update { it.copy(query = query) }
 
     fun setSort(sort: SortOrder) = controls.update { it.copy(sort = sort) }
+
+    fun setFilter(filter: LibraryFilter) = controls.update { it.copy(filter = filter) }
 
     fun toggleGrid() = controls.update { it.copy(grid = !it.grid) }
 

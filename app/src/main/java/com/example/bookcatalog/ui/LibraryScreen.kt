@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Deselect
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.MoreVert
@@ -39,11 +40,14 @@ import androidx.compose.material.icons.filled.SaveAlt
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
@@ -75,6 +79,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.example.bookcatalog.data.db.Book
+import com.example.bookcatalog.domain.BookFormat
+import com.example.bookcatalog.domain.LibraryFilter
+import com.example.bookcatalog.domain.ReadStatus
 import com.example.bookcatalog.domain.SortOrder
 import java.io.File
 import java.time.LocalDate
@@ -129,6 +136,10 @@ fun LibraryScreen(
             } else {
                 LibraryTopBar(
                     sort = controls.sort,
+                    filter = controls.filter,
+                    formatCounts = state.formatCounts,
+                    readStatusCounts = state.readStatusCounts,
+                    onFilter = viewModel::setFilter,
                     grid = controls.grid,
                     canSelect = !state.libraryIsEmpty,
                     onSort = viewModel::setSort,
@@ -153,7 +164,14 @@ fun LibraryScreen(
             }
             when {
                 state.libraryIsEmpty -> EmptyMessage("Your library is empty", "Add a book to start your collection.")
-                state.books.isEmpty() -> EmptyMessage("No matching books", "Try a different title, author, ISBN or publisher.")
+                state.books.isEmpty() -> EmptyMessage(
+                    "No matching books",
+                    if (controls.filter.isActive) {
+                        "Try a different search, or clear the filters."
+                    } else {
+                        "Try a different title, author, ISBN or publisher."
+                    },
+                )
                 controls.grid -> LazyVerticalGrid(
                     columns = GridCells.Adaptive(minSize = 104.dp),
                     contentPadding = PaddingValues(12.dp),
@@ -216,6 +234,10 @@ fun LibraryScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 private fun LibraryTopBar(
     sort: SortOrder,
+    filter: LibraryFilter,
+    formatCounts: Map<String, Int>,
+    readStatusCounts: Map<String, Int>,
+    onFilter: (LibraryFilter) -> Unit,
     grid: Boolean,
     canSelect: Boolean,
     onSort: (SortOrder) -> Unit,
@@ -228,6 +250,7 @@ private fun LibraryTopBar(
     TopAppBar(
         title = { Text("Book Catalog") },
         actions = {
+            FilterMenu(filter, formatCounts, readStatusCounts, onFilter)
             Box {
                 IconButton(onClick = { sortExpanded = true }) {
                     Icon(Icons.AutoMirrored.Filled.Sort, contentDescription = "Sort by ${sort.label.lowercase()}")
@@ -278,6 +301,87 @@ private fun LibraryTopBar(
         },
     )
 }
+
+/**
+ * Checkboxes for the formats and read statuses in the library, each with its count. Choices in
+ * one group are combined with "or", and the two groups with "and". The menu stays open while
+ * choices are toggled.
+ */
+@Composable
+private fun FilterMenu(
+    filter: LibraryFilter,
+    formatCounts: Map<String, Int>,
+    readStatusCounts: Map<String, Int>,
+    onFilter: (LibraryFilter) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    // Only values some book has, plus any still chosen, so the menu stays short.
+    val formats = (BookFormat.choices + LibraryFilter.NO_FORMAT)
+        .filter { (formatCounts[it] ?: 0) > 0 || it in filter.formats }
+    val readStatuses = ReadStatus.choices
+        .filter { (readStatusCounts[it] ?: 0) > 0 || it in filter.readStatuses }
+
+    Box {
+        IconButton(onClick = { expanded = true }) {
+            BadgedBox(badge = { if (filter.isActive) Badge() }) {
+                Icon(
+                    Icons.Default.FilterList,
+                    contentDescription = if (filter.isActive) "Filter, filters on" else "Filter",
+                )
+            }
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            FilterHeading("Format")
+            formats.forEach { format ->
+                FilterChoice(
+                    label = format.ifEmpty { "Not set" },
+                    count = formatCounts[format] ?: 0,
+                    checked = format in filter.formats,
+                ) { onFilter(filter.copy(formats = filter.formats.toggle(format))) }
+            }
+            HorizontalDivider()
+            FilterHeading("Read status")
+            readStatuses.forEach { status ->
+                FilterChoice(
+                    label = status.replaceFirstChar(Char::uppercase),
+                    count = readStatusCounts[status] ?: 0,
+                    checked = status in filter.readStatuses,
+                ) { onFilter(filter.copy(readStatuses = filter.readStatuses.toggle(status))) }
+            }
+            if (filter.isActive) {
+                HorizontalDivider()
+                DropdownMenuItem(
+                    text = { Text("Clear filters") },
+                    onClick = {
+                        expanded = false
+                        onFilter(LibraryFilter())
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun FilterHeading(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+    )
+}
+
+@Composable
+private fun FilterChoice(label: String, count: Int, checked: Boolean, onToggle: () -> Unit) {
+    DropdownMenuItem(
+        text = { Text("$label ($count)") },
+        leadingIcon = { Checkbox(checked = checked, onCheckedChange = null) },
+        onClick = onToggle,
+    )
+}
+
+private fun Set<String>.toggle(value: String): Set<String> = if (value in this) this - value else this + value
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)

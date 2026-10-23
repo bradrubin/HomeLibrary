@@ -10,13 +10,36 @@ enum class SortOrder(val label: String) {
     PUBLICATION_YEAR("Publication year"),
 }
 
+/**
+ * Limits the library to some formats and read statuses; an empty set allows any. A book with no
+ * format matches [NO_FORMAT], and one with no read status counts as unread.
+ */
+data class LibraryFilter(
+    val formats: Set<String> = emptySet(),
+    val readStatuses: Set<String> = emptySet(),
+) {
+    val isActive: Boolean get() = formats.isNotEmpty() || readStatuses.isNotEmpty()
+
+    fun matches(book: Book): Boolean =
+        (formats.isEmpty() || formatOf(book) in formats) &&
+            (readStatuses.isEmpty() || readStatusOf(book) in readStatuses)
+
+    companion object {
+        const val NO_FORMAT = ""
+
+        fun formatOf(book: Book): String = book.format?.takeIf(String::isNotBlank) ?: NO_FORMAT
+
+        fun readStatusOf(book: Book): String = book.readStatus?.takeIf(String::isNotBlank) ?: ReadStatus.UNREAD
+    }
+}
+
 /** Searches and sorts the library the way the library screen shows it. */
 object LibraryQuery {
     private val leadingArticle = Regex("^(the|a|an)\\s+")
     private val accents = Regex("\\p{Mn}+")
 
-    fun apply(books: List<Book>, query: String, sort: SortOrder): List<Book> =
-        sort(books.filter { matches(it, query) }, sort)
+    fun apply(books: List<Book>, query: String, sort: SortOrder, filter: LibraryFilter = LibraryFilter()): List<Book> =
+        sort(books.filter { filter.matches(it) && matches(it, query) }, sort)
 
     /**
      * Matches every word of [query] against the title, subtitle, authors and publisher, ignoring

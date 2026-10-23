@@ -65,4 +65,22 @@ class LibraryQueryTest {
     fun filtersThenSorts() {
         assertEquals(listOf(dune), LibraryQuery.apply(listOf(odyssey, dune, amelie), "frank", SortOrder.TITLE))
     }
+
+    @Test
+    fun filtersByFormatAndReadStatus() {
+        val kindleUnread = Book(id = 10, title = "A", format = "Kindle", readStatus = "unread")
+        val kindleRead = Book(id = 11, title = "B", format = "Kindle", readStatus = "read")
+        val audioNoStatus = Book(id = 12, title = "C", format = "Audiobook")
+        val noFormat = Book(id = 13, title = "D", readStatus = "reference")
+        val books = listOf(kindleUnread, kindleRead, audioNoStatus, noFormat)
+
+        fun shown(filter: LibraryFilter) = LibraryQuery.apply(books, "", SortOrder.TITLE, filter).map { it.id }
+
+        assertEquals(listOf(10L, 11L, 12L, 13L), shown(LibraryFilter()))
+        assertEquals(listOf(10L, 11L, 12L), shown(LibraryFilter(formats = setOf("Kindle", "Audiobook"))))
+        // A book with no read status counts as unread.
+        assertEquals(listOf(10L, 12L), shown(LibraryFilter(readStatuses = setOf("unread"))))
+        assertEquals(listOf(11L), shown(LibraryFilter(formats = setOf("Kindle"), readStatuses = setOf("read"))))
+        assertEquals(listOf(13L), shown(LibraryFilter(formats = setOf(LibraryFilter.NO_FORMAT))))
+    }
 }
