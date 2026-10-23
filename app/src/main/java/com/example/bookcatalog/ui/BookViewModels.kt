@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.bookcatalog.data.BookRepository
 import com.example.bookcatalog.data.db.Book
 import com.example.bookcatalog.data.metadata.BookMetadataRepository
+import com.example.bookcatalog.data.metadata.FetchedDetails
 import com.example.bookcatalog.data.metadata.MetadataLookupResult
 import android.content.ContentResolver
 import android.net.Uri
@@ -140,8 +141,11 @@ class BookEditViewModel(
     suspend fun mapSubjectsToBisac(book: Book): List<String> =
         metadataRepository.mapSubjectsToBisac(book)
 
-    suspend fun lookup(isbn13: String): MetadataLookupResult =
-        metadataRepository.lookup(isbn13)
+    suspend fun fetchDetails(isbn13: String): FetchedDetails =
+        metadataRepository.fetchDetails(isbn13)
+
+    val canMapSubjects: Boolean get() = metadataRepository.canMapSubjects
+    val canWriteDescriptions: Boolean get() = metadataRepository.canWriteDescriptions
 
     suspend fun writeDescription(book: Book): String? =
         metadataRepository.writeDescription(book)

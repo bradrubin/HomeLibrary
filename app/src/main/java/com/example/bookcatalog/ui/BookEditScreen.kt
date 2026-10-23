@@ -345,17 +345,25 @@ fun BookEditScreen(
     /**
      * Fills in a book that came from an Amazon book list from a new ISBN, as adding it by ISBN
      * would, keeping its ASIN, format, read status and the user's own location, notes, rating
-     * and date added.
+     * and date added. The edition's details are shown as soon as they arrive; the BISAC subjects
+     * and description follow when HomeChat finishes, which can take a minute.
      */
     fun lookUpIsbn(isbn13: String) {
         lookedUpIsbn = isbn13
         isbnLookup?.cancel()
         isbnLookup = scope.launch {
-            isbnStatus = ModelStatus("Looking up ISBN $isbn13. This can take a minute…", isError = false)
-            val result = viewModel.lookup(isbn13)
-            val found = result.book.takeIf { result.message == null }
+            isbnStatus = ModelStatus("Looking up ISBN $isbn13…", isError = false)
+            val details = viewModel.fetchDetails(isbn13)
+            val found = details.book
             if (found == null) {
-                isbnStatus = ModelStatus(result.message ?: "No book details were found.", isError = true)
+                isbnStatus = ModelStatus(
+                    if (details.allSourcesFailed) {
+                        "Couldn’t connect to the book lookup services. Check your internet connection and try again."
+                    } else {
+                        "No book details were found for ISBN $isbn13."
+                    },
+                    isError = true,
+                )
                 return@launch
             }
             val current = draft
@@ -371,16 +379,50 @@ fun BookEditScreen(
                 coverSourceUrl = found.coverSourceUrl ?: current.coverSourceUrl,
                 dataSource = listOfNotNull(AmazonImporter.SOURCE, found.dataSource).joinToString("+"),
             )
-            isbnStatus = ModelStatus(
-                listOfNotNull("Details filled in from ISBN $isbn13.", result.warning).joinToString(" "),
-                isError = result.warning != null,
-            )
+            val problems = mutableListOf<String>()
+            if (found.coverFile == null) {
+                problems += if (details.coverDownloadFailed) {
+                    "Its cover couldn't be downloaded."
+                } else {
+                    "No cover was found for this ISBN."
+                }
+            }
+            fun report(pending: String? = null) {
+                isbnStatus = ModelStatus(
+                    (listOf("Details filled in from ISBN $isbn13.") + problems + listOfNotNull(pending)).joinToString(" "),
+                    isError = problems.isNotEmpty(),
+                )
+            }
+
+            // Only the subjects and description change from here, so other edits made meanwhile are kept.
+            if (viewModel.canMapSubjects && !details.hasPublisherBisac) {
+                report("Mapping subjects to BISAC…")
+                try {
+                    val headings = viewModel.mapSubjectsToBisac(draft.toBook(originalBook))
+                    if (headings.isNotEmpty()) draft = draft.copy(subjects = headings.joinToString("; "))
+                } catch (exception: ModelException) {
+                    problems += "Could not map subjects to BISAC."
+                }
+            }
+            if (viewModel.canWriteDescriptions) {
+                report("Writing a description…")
+                try {
+                    viewModel.writeDescription(draft.toBook(originalBook))?.let { draft = draft.copy(description = it) }
+                } catch (exception: ModelException) {
+                    problems += "Could not write a description."
+                }
+            }
+            report()
         }
     }
 
-    /** Starts a lookup when an Amazon book's ISBN is changed to a different valid one. */
-    fun onIsbnEdited(value: String) {
-        if (draft.asin.isBlank()) return
+    /**
+     * Starts a lookup when an Amazon book's ISBN is changed to a different valid one. Each field
+     * waits for a full ISBN of its own length, so the first ten digits of an ISBN-13 being typed
+     * can't start a lookup of an unrelated ISBN-10.
+     */
+    fun onIsbnEdited(value: String, length: Int) {
+        if (draft.asin.isBlank() || IsbnUtils.normalize(value).length != length) return
         val isbn13 = IsbnUtils.toIsbn13(value) ?: return
         if (isbn13 != (lookedUpIsbn ?: originalBook?.isbn13)) lookUpIsbn(isbn13)
     }
@@ -566,7 +608,7 @@ fun BookEditScreen(
                 draft.isbn13,
                 {
                     draft = draft.copy(isbn13 = it)
-                    onIsbnEdited(it)
+                    onIsbnEdited(it, length = 13)
                 },
                 keyboardType = KeyboardType.Number,
             )
@@ -575,13 +617,13 @@ fun BookEditScreen(
                 draft.isbn10,
                 {
                     draft = draft.copy(isbn10 = it)
-                    onIsbnEdited(it)
+                    onIsbnEdited(it, length = 10)
                 },
                 keyboardType = KeyboardType.Number,
                 trailingIcon = {
                     IsbnCheckXButton(draft.isbn10) {
                         draft = draft.copy(isbn10 = it)
-                        onIsbnEdited(it)
+                        onIsbnEdited(it, length = 10)
                     }
                 },
             )
