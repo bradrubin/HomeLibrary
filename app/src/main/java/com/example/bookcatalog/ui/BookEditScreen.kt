@@ -198,6 +198,7 @@ fun BookEditScreen(
     var detectedCrop by rememberSaveable { mutableStateOf<NormalizedCrop?>(null) }
     var cropTransform by rememberSaveable { mutableStateOf<PhotoTransform?>(null) }
     var cropBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var croppingChosenImage by rememberSaveable { mutableStateOf(false) }
     // Kept from the first composition, since the lookup that produced them isn't saved.
     val lookupNotice by rememberSaveable(bookId) { mutableStateOf(lookupMessage) }
     val lookupProblem by rememberSaveable(bookId) { mutableStateOf(lookupWarning) }
@@ -226,20 +227,24 @@ fun BookEditScreen(
         coverError = error
     }
 
-    fun onPhotoCaptured() {
+    /** Straightens a camera photo to its detected cover edges; a chosen image is framed whole. */
+    fun onPhotoCaptured(chosenImage: Boolean = false) {
         showCamera = false
         val source = captureFile ?: return
         scope.launch {
             try {
                 val photo = withContext(Dispatchers.IO) { coverStore.decodeForEditing(source) }
-                val detected = withContext(Dispatchers.Default) {
-                    CoverBoundaryDetector.detect(photo)
+                val detected = if (chosenImage) {
+                    null
+                } else {
+                    withContext(Dispatchers.Default) { CoverBoundaryDetector.detect(photo) }
                 }
                 val transform = detected?.transform ?: PhotoTransform.identity(photo.width, photo.height)
                 cropBitmap = withContext(Dispatchers.Default) {
                     coverStore.transform(photo, transform).also { if (it !== photo) photo.recycle() }
                 }
-                detectedCrop = detected?.crop
+                detectedCrop = if (chosenImage) NormalizedCrop(0f, 0f, 1f, 1f) else detected?.crop
+                croppingChosenImage = chosenImage
                 cropTransform = transform
                 cropping = true
             } catch (exception: IOException) {
@@ -326,7 +331,7 @@ fun BookEditScreen(
                 }
                 captureFile = file
                 coverError = null
-                onPhotoCaptured()
+                onPhotoCaptured(chosenImage = true)
             } catch (exception: IOException) {
                 Log.e(TAG, "Could not copy chosen cover image", exception)
                 coverError = "The image couldn't be opened. Please choose another."
@@ -424,6 +429,7 @@ fun BookEditScreen(
         CropPhotoScreen(
             bitmap = bitmap,
             initialCrop = detectedCrop,
+            chosenImage = croppingChosenImage,
             onRotate = ::rotateCrop,
             onUseCrop = ::useCrop,
             onCancel = ::cancelCrop,

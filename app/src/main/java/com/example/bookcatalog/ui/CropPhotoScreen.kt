@@ -63,6 +63,8 @@ private data class CropSelection(
 fun CropPhotoScreen(
     bitmap: Bitmap,
     initialCrop: NormalizedCrop?,
+    /** True for a chosen image, which starts framed to its edges instead of detected ones. */
+    chosenImage: Boolean = false,
     onRotate: (NormalizedCrop) -> Unit,
     onUseCrop: (NormalizedCrop) -> Unit,
     onCancel: () -> Unit,
@@ -125,7 +127,9 @@ fun CropPhotoScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(
-                if (!edgesFound) {
+                if (chosenImage) {
+                    "Drag the corners to trim any border around the cover."
+                } else if (!edgesFound) {
                     "Couldn’t detect the cover edges confidently. Drag the corners to fit the cover."
                 } else {
                     "We found the cover edges. Adjust the frame if needed."
