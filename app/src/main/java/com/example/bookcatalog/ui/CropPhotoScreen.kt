@@ -139,7 +139,9 @@ fun CropPhotoScreen(
             BoxWithConstraints(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f),
+                    .weight(1f)
+                    // Keeps the side handles clear of the screen-edge swipe that goes back.
+                    .padding(horizontal = 32.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 val image = remember(bitmap) { bitmap.asImageBitmap() }
