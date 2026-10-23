@@ -91,10 +91,7 @@ class BookMetadataRepository(
 
         var withCover = book
         var coverDownloadErrored = false
-        val coverUrls = listOfNotNull(
-            openResult?.metadata?.coverUrl,
-            googleResult?.metadata?.coverUrl,
-        ).distinct()
+        val coverUrls = MetadataMerger.coverUrls(openResult?.metadata, googleResult?.metadata, locResult?.metadata)
         for (coverUrl in coverUrls) {
             val coverFile = try {
                 withContext(Dispatchers.IO) { coverStore.download(isbn13, coverUrl) }
@@ -169,6 +166,8 @@ class BookMetadataRepository(
             warning = listOfNotNull(
                 "Book details were found, but its cover could not be downloaded."
                     .takeIf { coverDownloadFailed },
+                "No cover was found for this ISBN."
+                    .takeIf { !coverDownloadFailed && mappedBook.coverFile == null },
                 "Could not map subjects to BISAC; source subjects are shown instead."
                     .takeIf { subjectMappingFailed },
                 when {

@@ -20,6 +20,11 @@ data class BookMetadata(
     val coverUrl: String? = null,
     /** One of the [com.example.bookcatalog.domain.BookFormat] choices. */
     val format: String? = null,
+    /**
+     * False for another edition found by a plain search, which only fills gaps when its title
+     * agrees with a source that matched the exact ISBN.
+     */
+    val exactEdition: Boolean = true,
 ) {
     val hasDetails: Boolean
         get() = listOf(

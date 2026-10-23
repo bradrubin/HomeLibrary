@@ -7,7 +7,6 @@ import com.example.bookcatalog.data.remote.GoogleBooksVolumeDto
 import com.example.bookcatalog.data.remote.GoogleBooksVolumeInfoDto
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertNull
 import org.junit.Test
 
 class GoogleBooksMetadataSourceTest {
@@ -44,7 +43,7 @@ class GoogleBooksMetadataSourceTest {
     }
 
     @Test
-    fun rejectsUnqualifiedSearchResultsForAnotherIsbn() {
+    fun marksUnqualifiedSearchResultsForAnotherIsbnAsAnotherEdition() {
         val api = object : GoogleBooksApi {
             override suspend fun search(query: String, apiKey: String?): GoogleBooksResponseDto {
                 return if (query.startsWith("isbn:")) {
@@ -70,11 +69,11 @@ class GoogleBooksMetadataSourceTest {
             GoogleBooksMetadataSource(api, null).fetch("9780385533225")
         }
 
-        assertNull(result)
+        assertEquals(false, result?.exactEdition)
     }
 
     @Test
-    fun rejectsUnqualifiedResultsWithoutIdentifiers() {
+    fun marksUnqualifiedResultsWithoutIdentifiersAsAnotherEdition() {
         val api = object : GoogleBooksApi {
             override suspend fun search(query: String, apiKey: String?): GoogleBooksResponseDto {
                 return if (query.startsWith("isbn:")) {
@@ -95,6 +94,6 @@ class GoogleBooksMetadataSourceTest {
             GoogleBooksMetadataSource(api, null).fetch("9780385533225")
         }
 
-        assertNull(result)
+        assertEquals(false, result?.exactEdition)
     }
 }

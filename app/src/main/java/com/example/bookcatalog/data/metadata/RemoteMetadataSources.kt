@@ -35,10 +35,22 @@ class OpenLibraryMetadataSource(
             subjects = record.subjects.orEmpty().mapNotNull { it.name.nonBlank() },
             coverUrl = (record.cover?.large ?: record.cover?.medium ?: record.cover?.small)
                 .nonBlank()
-                ?.replaceFirst("http://", "https://"),
+                ?.replaceFirst("http://", "https://")
+                ?: workCover(isbn13),
             format = edition.await(),
         ).takeIf(BookMetadata::hasDetails)
     }
+
+    /** Many editions have no cover of their own, while another edition of the same work does. */
+    private suspend fun workCover(isbn13: String): String? =
+        try {
+            api.searchByIsbn(isbn13).docs.firstOrNull()?.coverId
+                ?.let { "https://covers.openlibrary.org/b/id/$it-L.jpg" }
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            null
+        }
 
     /** The format is a nicety, so a missing or failed edition record doesn't fail the lookup. */
     private suspend fun editionFormat(isbn13: String): String? =
@@ -63,12 +75,14 @@ class GoogleBooksMetadataSource(
             .items
             ?.firstOrNull()
             ?.volumeInfo
-        val volume = exactSearch ?: api.search(isbn13, key)
-            .items
-            ?.firstNotNullOfOrNull { item ->
-                item.volumeInfo?.takeIf { it.matchesIsbn13(isbn13) }
-            }
-            ?: return null
+        // Google often finds nothing for "isbn:", while a plain search finds this or another edition.
+        val plainResults = if (exactSearch == null) {
+            api.search(isbn13, key).items.orEmpty().mapNotNull { it.volumeInfo }
+        } else {
+            emptyList()
+        }
+        val exact = exactSearch ?: plainResults.firstOrNull { it.matchesIsbn13(isbn13) }
+        val volume = exact ?: plainResults.firstOrNull() ?: return null
         return BookMetadata(
             title = volume.title.nonBlank(),
             subtitle = volume.subtitle.nonBlank(),
@@ -80,6 +94,7 @@ class GoogleBooksMetadataSource(
             subjects = volume.categories.orEmpty().mapNotNull { it.nonBlank() },
             description = volume.description.nonBlank(),
             coverUrl = volume.imageLinks?.thumbnail?.nonBlank()?.let(::upgradeGoogleCoverUrl),
+            exactEdition = exact != null,
         ).takeIf(BookMetadata::hasDetails)
     }
 

@@ -188,4 +188,38 @@ class MetadataMergerTest {
         assertEquals("The Silent Patient", book.title)
         assertEquals("LibraryOfCongress", book.dataSource)
     }
+
+    @Test
+    fun relatedGoogleEditionFillsGapsOnlyForTheSameBook() {
+        val open = BookMetadata(title = "I'm a Stranger Here Myself", authors = listOf("Bill Bryson"))
+        val related = BookMetadata(
+            title = "I'm a Stranger Here Myself",
+            description = "Notes on returning to America.",
+            subjects = listOf("Travel"),
+            coverUrl = "https://books.google.com/cover.jpg",
+            publisher = "Another publisher",
+            exactEdition = false,
+        )
+
+        val book = MetadataMerger.merge("9780767903820", open, related)
+
+        assertEquals("Notes on returning to America.", book?.description)
+        assertEquals("Travel", book?.subjects)
+        assertEquals("https://books.google.com/cover.jpg", book?.coverSourceUrl)
+        // Edition details such as the publisher belong to the other edition, so they aren't used.
+        assertEquals(null, book?.publisher)
+        assertEquals("OpenLibrary+Google", book?.dataSource)
+
+        val otherBook = related.copy(title = "The Color Master")
+        assertEquals(null, MetadataMerger.merge("9780767903820", open, otherBook)?.description)
+        assertEquals(emptyList<String>(), MetadataMerger.coverUrls(open, otherBook))
+    }
+
+    @Test
+    fun relatedGoogleEditionAloneIsNotAMatch() {
+        val related = BookMetadata(title = "Some Book", coverUrl = "https://books.google.com/c.jpg", exactEdition = false)
+
+        assertEquals(null, MetadataMerger.merge("9780767903820", null, related))
+        assertEquals(emptyList<String>(), MetadataMerger.coverUrls(null, related))
+    }
 }

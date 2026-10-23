@@ -31,6 +31,15 @@ interface OpenLibraryApi {
         @Query("fields") fields: String = "title,author_name,isbn",
         @Query("limit") limit: Int = 5,
     ): OpenLibrarySearchResponseDto
+
+    /** Finds the work an ISBN belongs to, whose cover may come from any of its editions. */
+    @Headers("User-Agent: BookCatalog/1.0 (personal home library)")
+    @GET("search.json")
+    suspend fun searchByIsbn(
+        @Query("isbn") isbn13: String,
+        @Query("fields") fields: String = "cover_i",
+        @Query("limit") limit: Int = 1,
+    ): OpenLibrarySearchResponseDto
 }
 
 data class OpenLibrarySearchResponseDto(
@@ -41,6 +50,7 @@ data class OpenLibrarySearchDocDto(
     val title: String? = null,
     @Json(name = "author_name") val authorNames: List<String>? = null,
     val isbn: List<String>? = null,
+    @Json(name = "cover_i") val coverId: Long? = null,
 )
 
 data class OpenLibraryEditionDto(
