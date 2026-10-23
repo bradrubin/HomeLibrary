@@ -52,7 +52,7 @@ class AppContainer(application: Application) {
         application,
         AppDatabase::class.java,
         "book-catalog.db",
-    ).addMigrations(AppDatabase.MIGRATION_1_2).build()
+    ).addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3).build()
 
     val contentResolver: ContentResolver = application.contentResolver
 

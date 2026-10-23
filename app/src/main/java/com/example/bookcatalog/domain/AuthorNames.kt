@@ -22,12 +22,27 @@ object AuthorNames {
         return (listOf("${parts[1]} ${parts[0]}") + kept).joinToString(", ")
     }
 
-    /** Puts each name in a "; "-separated list into natural order. */
+    private val initial = Regex("[A-Z]\\.?")
+
+    /**
+     * Drops a single middle initial after a full first name, so "Richard J. Ablin" becomes
+     * "Richard Ablin". Names that start with initials, such as "J. K. Rowling", and names with
+     * more than one middle initial, such as "George R. R. Martin", are kept as they are.
+     */
+    fun withoutMiddleInitial(name: String): String {
+        val base = name.substringBefore(", ")
+        val words = base.split(' ').filter(String::isNotEmpty)
+        if (words.size < 3 || words[0].matches(initial) || words[0].endsWith('.')) return name
+        if (!words[1].matches(initial) || words[2].matches(initial)) return name
+        return (listOf(words[0]) + words.drop(2)).joinToString(" ") + name.removePrefix(base)
+    }
+
+    /** Puts each name in a "; "-separated list into natural order, without a middle initial. */
     fun normalize(authors: String?): String? =
         authors?.split(';')
             ?.map(String::trim)
             ?.filter(String::isNotEmpty)
-            ?.map(::naturalOrder)
+            ?.map { withoutMiddleInitial(naturalOrder(it)) }
             ?.takeIf(List<String>::isNotEmpty)
             ?.joinToString("; ")
 
