@@ -188,6 +188,7 @@ fun BookEditScreen(
     val lookupProblem by rememberSaveable(bookId) { mutableStateOf(lookupWarning) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val scrollState = rememberScrollState()
 
     fun takeCoverPhoto() {
         try {
@@ -341,6 +342,9 @@ fun BookEditScreen(
         return
     }
 
+    // A new book can always be saved; an existing one acts as a view until something changes.
+    val hasChanges = bookId == null || originalBook?.let { draft != BookDraft.from(it) } == true
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -363,7 +367,7 @@ fun BookEditScreen(
             )
         },
         bottomBar = {
-            Row(
+            if (hasChanges) Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .imePadding()
@@ -395,6 +399,9 @@ fun BookEditScreen(
                                 viewModel.save(draft.toBook(existingBook = originalBook))
                                 onSaved()
                             }
+                        } else {
+                            // The error is shown above the fields, which may be scrolled out of view.
+                            scope.launch { scrollState.animateScrollTo(0) }
                         }
                     },
                     modifier = Modifier.weight(1f),
@@ -408,7 +415,7 @@ fun BookEditScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(contentPadding)
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(scrollState)
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
