@@ -101,6 +101,7 @@ fun IsbnLookupScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
                     )
                 },
+                trailingIcon = { IsbnCheckXButton(input) { input = it } },
                 singleLine = true,
                 isError = input.isNotBlank() && isbn13 == null,
                 supportingText = {
@@ -113,7 +114,7 @@ fun IsbnLookupScreen(
                     }
                 },
                 keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Ascii,
+                    keyboardType = KeyboardType.Number,
                     imeAction = ImeAction.Search,
                 ),
                 keyboardActions = KeyboardActions(onSearch = { startLookup() }),

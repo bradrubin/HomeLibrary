@@ -61,6 +61,12 @@ object IsbnUtils {
         }
     }
 
+    /** True when [input] is the first nine digits of an ISBN-10 whose check digit is X. */
+    fun needsIsbn10CheckX(input: String): Boolean {
+        val isbn = normalize(input)
+        return isbn.length == 9 && isbn.all(Char::isDigit) && isValidIsbn10(isbn + "X")
+    }
+
     private fun isbn13CheckDigit(firstTwelve: String): String {
         val sum = firstTwelve.map(Char::digitToInt).mapIndexed { index, digit ->
             digit * if (index % 2 == 0) 1 else 3

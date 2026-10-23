@@ -45,6 +45,8 @@ import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
@@ -448,17 +450,29 @@ fun BookEditScreen(
             ) {
                 Text(if (draft.coverFile.isBlank()) "Take cover photo" else "Replace cover photo")
             }
-            BookTextField("Title", draft.title, { draft = draft.copy(title = it) }, required = true)
-            BookTextField("Subtitle", draft.subtitle, { draft = draft.copy(subtitle = it) })
+            BookTextField("Title", draft.title, { draft = draft.copy(title = it) }, required = true, capitalization = KeyboardCapitalization.Words)
+            BookTextField("Subtitle", draft.subtitle, { draft = draft.copy(subtitle = it) }, capitalization = KeyboardCapitalization.Words)
             BookTextField(
                 "Authors",
                 draft.authors,
                 { draft = draft.copy(authors = it) },
                 placeholder = "e.g. Jane Doe; John Smith",
+                capitalization = KeyboardCapitalization.Words,
             )
-            BookTextField("ISBN-13", draft.isbn13, { draft = draft.copy(isbn13 = it) })
-            BookTextField("ISBN-10", draft.isbn10, { draft = draft.copy(isbn10 = it) })
-            BookTextField("Publisher", draft.publisher, { draft = draft.copy(publisher = it) })
+            BookTextField(
+                "ISBN-13",
+                draft.isbn13,
+                { draft = draft.copy(isbn13 = it) },
+                keyboardType = KeyboardType.Number,
+            )
+            BookTextField(
+                "ISBN-10",
+                draft.isbn10,
+                { draft = draft.copy(isbn10 = it) },
+                keyboardType = KeyboardType.Number,
+                trailingIcon = { IsbnCheckXButton(draft.isbn10) { draft = draft.copy(isbn10 = it) } },
+            )
+            BookTextField("Publisher", draft.publisher, { draft = draft.copy(publisher = it) }, capitalization = KeyboardCapitalization.Words)
             BookTextField(
                 "Publication year",
                 draft.publishedDate,
@@ -476,8 +490,8 @@ fun BookEditScreen(
                 value = draft.format,
                 choices = listOf("" to "Not set") + BookFormat.choices.map { it to it },
             ) { draft = draft.copy(format = it) }
-            BookTextField("Language", draft.language, { draft = draft.copy(language = it) })
-            BookTextField("Subjects (BISAC)", draft.subjects, { draft = draft.copy(subjects = it) })
+            BookTextField("Language", draft.language, { draft = draft.copy(language = it) }, capitalization = KeyboardCapitalization.Words)
+            BookTextField("Subjects (BISAC)", draft.subjects, { draft = draft.copy(subjects = it) }, capitalization = KeyboardCapitalization.Words)
             Button(
                 onClick = {
                     runModelTask(ModelTask.SUBJECTS, { subjectStatus = it }) {
@@ -501,6 +515,7 @@ fun BookEditScreen(
                 draft.description,
                 { draft = draft.copy(description = it) },
                 singleLine = false,
+                capitalization = KeyboardCapitalization.Sentences,
             )
             Button(
                 onClick = {
@@ -527,8 +542,14 @@ fun BookEditScreen(
                 )
             }
             descriptionStatus?.let { ModelStatusText(it) }
-            BookTextField("Location", draft.location, { draft = draft.copy(location = it) })
-            BookTextField("Notes", draft.notes, { draft = draft.copy(notes = it) }, singleLine = false)
+            BookTextField("Location", draft.location, { draft = draft.copy(location = it) }, capitalization = KeyboardCapitalization.Sentences)
+            BookTextField(
+                "Notes",
+                draft.notes,
+                { draft = draft.copy(notes = it) },
+                singleLine = false,
+                capitalization = KeyboardCapitalization.Sentences,
+            )
             BookTextField(
                 "Rating (0–5)",
                 draft.rating,
@@ -579,6 +600,8 @@ private fun BookTextField(
     required: Boolean = false,
     singleLine: Boolean = true,
     keyboardType: KeyboardType = KeyboardType.Text,
+    capitalization: KeyboardCapitalization = KeyboardCapitalization.None,
+    trailingIcon: (@Composable () -> Unit)? = null,
     supportingText: String? = null,
     placeholder: String? = null,
 ) {
@@ -598,6 +621,7 @@ private fun BookTextField(
             }
         },
         supportingText = supportingText?.let { text -> { Text(text) } },
+        trailingIcon = trailingIcon,
         modifier = Modifier
             .fillMaxWidth()
             .bringIntoViewRequester(bringIntoViewRequester)
@@ -607,7 +631,12 @@ private fun BookTextField(
                 }
             },
         singleLine = singleLine,
-        keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
+        // Next moves focus down the form; multi-line fields keep Enter for new lines.
+        keyboardOptions = KeyboardOptions(
+            capitalization = capitalization,
+            keyboardType = keyboardType,
+            imeAction = if (singleLine) ImeAction.Next else ImeAction.Default,
+        ),
         minLines = if (singleLine) 1 else 3,
     )
 }

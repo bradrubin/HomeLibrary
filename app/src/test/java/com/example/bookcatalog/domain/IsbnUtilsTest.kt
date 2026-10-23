@@ -25,6 +25,14 @@ class IsbnUtilsTest {
     }
 
     @Test
+    fun detectsWhenIsbn10CheckDigitIsX() {
+        assertTrue(IsbnUtils.needsIsbn10CheckX("0-8044-2957"))
+        assertFalse(IsbnUtils.needsIsbn10CheckX("030640615"))
+        assertFalse(IsbnUtils.needsIsbn10CheckX("080442957X"))
+        assertFalse(IsbnUtils.needsIsbn10CheckX("08044295"))
+    }
+
+    @Test
     fun barcodeAcceptsOnlyValidBookEans() {
         assertEquals("9780385533225", IsbnUtils.fromBarcode("9780385533225"))
         assertEquals("9791090636071", IsbnUtils.fromBarcode("9791090636071"))
