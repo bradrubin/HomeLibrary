@@ -15,6 +15,7 @@ import java.time.ZoneId
 enum class CsvColumn(val header: String) {
     ISBN13("isbn13"),
     ISBN10("isbn10"),
+    ASIN("asin"),
     TITLE("title"),
     SUBTITLE("subtitle"),
     AUTHORS("authors"),
@@ -109,6 +110,7 @@ object BookCsv {
     private fun Book.valueFor(column: CsvColumn, zone: ZoneId): String? = when (column) {
         CsvColumn.ISBN13 -> isbn13
         CsvColumn.ISBN10 -> isbn10
+        CsvColumn.ASIN -> asin
         CsvColumn.TITLE -> title
         CsvColumn.SUBTITLE -> subtitle
         CsvColumn.AUTHORS -> authors

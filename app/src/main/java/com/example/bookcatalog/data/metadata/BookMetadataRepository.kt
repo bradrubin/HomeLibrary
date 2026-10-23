@@ -21,6 +21,15 @@ import java.io.IOException
 /** A HomeChat request that failed in an expected way, with a [message] to show the user. */
 class ModelException(message: String, cause: Throwable? = null) : Exception(message, cause)
 
+data class FetchedDetails(
+    val book: Book?,
+    /** True when every source failed, rather than answering that it doesn't know the ISBN. */
+    val allSourcesFailed: Boolean,
+    val coverDownloadFailed: Boolean = false,
+    /** The Library of Congress record carried publisher-supplied BISAC headings. */
+    val hasPublisherBisac: Boolean = false,
+)
+
 class BookMetadataRepository(
     private val sources: List<BookMetadataSource>,
     private val coverStore: CoverStore,
@@ -59,7 +68,11 @@ class BookMetadataRepository(
         }
     }
 
-    suspend fun lookup(isbn13: String): MetadataLookupResult = supervisorScope {
+    /**
+     * Looks up the book's details and downloads its cover, without the HomeChat steps. The book
+     * is null when no source knew the ISBN.
+     */
+    suspend fun fetchDetails(isbn13: String): FetchedDetails = supervisorScope {
         val results = sources
             .map { source -> source.name to async { fetchSafely(source, isbn13) } }
             .associate { (name, deferred) -> name to deferred.await() }
@@ -71,17 +84,12 @@ class BookMetadataRepository(
             openLibrary = openResult?.metadata,
             googleBooks = googleResult?.metadata,
             libraryOfCongress = locResult?.metadata,
+        ) ?: return@supervisorScope FetchedDetails(
+            book = null,
+            allSourcesFailed = results.values.all(SourceResult::failed),
         )
-            ?: return@supervisorScope MetadataLookupResult(
-                book = emptyLookupBook(isbn13),
-                message = if (results.values.all(SourceResult::failed)) {
-                    "Couldn’t connect to the book lookup services. Check your internet connection and try again."
-                } else {
-                    "No book details were found. You can enter them manually."
-                },
-            )
 
-        var mappedBook = book
+        var withCover = book
         var coverDownloadErrored = false
         val coverUrls = listOfNotNull(
             openResult?.metadata?.coverUrl,
@@ -100,17 +108,34 @@ class BookMetadataRepository(
                 null
             }
             if (coverFile != null) {
-                mappedBook = book.copy(coverFile = coverFile, coverSourceUrl = coverUrl)
+                withCover = book.copy(coverFile = coverFile, coverSourceUrl = coverUrl)
                 break
             }
         }
-        // Only worth mentioning when an error, not just a placeholder image, left the book without one.
-        val coverDownloadFailed = coverDownloadErrored && mappedBook.coverFile == null
-        var subjectMappingFailed = false
         val usedLibraryOfCongress = book.dataSource.orEmpty().split('+').contains("LibraryOfCongress")
-        val hasPublisherBisac = usedLibraryOfCongress &&
-            locResult?.metadata?.bisacSubjects.orEmpty().isNotEmpty()
-        if (subjectMapper != null && !hasPublisherBisac) {
+        FetchedDetails(
+            book = withCover,
+            allSourcesFailed = false,
+            // Only worth mentioning when an error, not just a placeholder image, left the book without one.
+            coverDownloadFailed = coverDownloadErrored && withCover.coverFile == null,
+            hasPublisherBisac = usedLibraryOfCongress && locResult?.metadata?.bisacSubjects.orEmpty().isNotEmpty(),
+        )
+    }
+
+    suspend fun lookup(isbn13: String): MetadataLookupResult {
+        val details = fetchDetails(isbn13)
+        var mappedBook = details.book
+            ?: return MetadataLookupResult(
+                book = emptyLookupBook(isbn13),
+                message = if (details.allSourcesFailed) {
+                    "Couldn’t connect to the book lookup services. Check your internet connection and try again."
+                } else {
+                    "No book details were found. You can enter them manually."
+                },
+            )
+        val coverDownloadFailed = details.coverDownloadFailed
+        var subjectMappingFailed = false
+        if (subjectMapper != null && !details.hasPublisherBisac) {
             val subjects = try {
                 mapSubjectsToBisac(mappedBook)
             } catch (_: ModelException) {
@@ -139,7 +164,7 @@ class BookMetadataRepository(
                 descriptionFailed = true
             }
         }
-        MetadataLookupResult(
+        return MetadataLookupResult(
             book = mappedBook,
             warning = listOfNotNull(
                 "Book details were found, but its cover could not be downloaded."
@@ -177,6 +202,10 @@ class BookMetadataRepository(
             title = "",
             language = Language.DEFAULT,
         )
+
+    /** Whether HomeChat steps are configured, so an import can tell a skipped step from a failed one. */
+    val canMapSubjects: Boolean get() = subjectMapper != null
+    val canWriteDescriptions: Boolean get() = descriptionWriter != null
 
     private data class SourceResult(
         val metadata: BookMetadata?,

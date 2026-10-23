@@ -253,6 +253,7 @@ class LibraryImporter(
         return base.copy(
             isbn13 = isbn13,
             isbn10 = isbn10,
+            asin = text(CsvColumn.ASIN, base.asin)?.uppercase(),
             title = requireNotNull(text(CsvColumn.TITLE, base.title)),
             subtitle = text(CsvColumn.SUBTITLE, base.subtitle),
             authors = AuthorNames.normalize(text(CsvColumn.AUTHORS, base.authors)),

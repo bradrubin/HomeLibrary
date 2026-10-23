@@ -84,6 +84,7 @@ private fun BookCatalogNavigation(container: AppContainer) {
                             ImportExportViewModel(
                                 container.libraryExporter,
                                 container.libraryImporter,
+                                container.amazonImporter,
                                 container.contentResolver,
                             )
                         }

@@ -7,8 +7,10 @@ import androidx.room.Room
 import com.example.bookcatalog.data.covers.CoverStore
 import com.example.bookcatalog.data.BookRepository
 import com.example.bookcatalog.data.db.AppDatabase
+import com.example.bookcatalog.data.io.AmazonImporter
 import com.example.bookcatalog.data.io.LibraryExporter
 import com.example.bookcatalog.data.io.LibraryImporter
+import com.example.bookcatalog.data.metadata.AmazonLookup
 import com.example.bookcatalog.data.metadata.BookMetadataRepository
 import com.example.bookcatalog.data.metadata.BraveWebSearch
 import com.example.bookcatalog.data.metadata.GoogleBooksMetadataSource
@@ -16,6 +18,7 @@ import com.example.bookcatalog.data.metadata.LibraryOfCongressMetadataSource
 import com.example.bookcatalog.data.metadata.HomeChatApi
 import com.example.bookcatalog.data.metadata.HomeChatBisacSubjectMapper
 import com.example.bookcatalog.data.metadata.HomeChatDescriptionWriter
+import com.example.bookcatalog.data.metadata.IsbnFinder
 import com.example.bookcatalog.data.metadata.OpenLibraryMetadataSource
 import com.example.bookcatalog.data.remote.BraveSearchApi
 import com.example.bookcatalog.data.remote.GoogleBooksApi
@@ -49,7 +52,7 @@ class AppContainer(application: Application) {
         application,
         AppDatabase::class.java,
         "book-catalog.db",
-    ).build()
+    ).addMigrations(AppDatabase.MIGRATION_1_2).build()
 
     val contentResolver: ContentResolver = application.contentResolver
 
@@ -92,15 +95,12 @@ class AppContainer(application: Application) {
             webSearch,
         )
     }
+    private val openLibraryApi = retrofit("https://openlibrary.org/").create(OpenLibraryApi::class.java)
+    private val googleBooksApi = retrofit("https://www.googleapis.com/").create(GoogleBooksApi::class.java)
     val metadataRepository = BookMetadataRepository(
         sources = listOf(
-            OpenLibraryMetadataSource(
-                retrofit("https://openlibrary.org/").create(OpenLibraryApi::class.java),
-            ),
-            GoogleBooksMetadataSource(
-                retrofit("https://www.googleapis.com/").create(GoogleBooksApi::class.java),
-                BuildConfig.GOOGLE_BOOKS_API_KEY,
-            ),
+            OpenLibraryMetadataSource(openLibraryApi),
+            GoogleBooksMetadataSource(googleBooksApi, BuildConfig.GOOGLE_BOOKS_API_KEY),
             // The catalog's SRU endpoint is only served over HTTP; see network_security_config.
             LibraryOfCongressMetadataSource(
                 retrofit("http://lx2.loc.gov:210/").create(LibraryOfCongressApi::class.java),
@@ -117,6 +117,13 @@ class AppContainer(application: Application) {
         coverDirectory = coverStore.coverDirectory,
         stagingDirectory = File(application.cacheDir, "import-covers"),
         fetchCover = { isbn13, url -> withContext(Dispatchers.IO) { coverStore.download(isbn13, url) } },
+    )
+    val amazonImporter = AmazonImporter(
+        store = bookRepository,
+        enricher = AmazonLookup(
+            IsbnFinder(openLibraryApi, googleBooksApi, BuildConfig.GOOGLE_BOOKS_API_KEY),
+            metadataRepository,
+        ),
     )
 
     init {

@@ -30,6 +30,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -37,8 +38,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
+import com.example.bookcatalog.data.io.AmazonImportSummary
 import com.example.bookcatalog.data.io.DuplicateHandling
 import com.example.bookcatalog.data.io.ImportOptions
 import com.example.bookcatalog.data.io.ImportSummary
@@ -62,7 +65,17 @@ fun ImportExportScreen(
     val importFile = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument(),
     ) { uri -> uri?.let { viewModel.import(it, ImportOptions(duplicates, fetchMissingCovers)) } }
+    val importAmazon = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri -> uri?.let(viewModel::importAmazon) }
     val baseName = "book-catalog-${LocalDate.now()}"
+
+    // An Amazon import can take hours, and leaving this screen stops it.
+    val view = LocalView.current
+    DisposableEffect(state.busy) {
+        view.keepScreenOn = state.busy
+        onDispose { view.keepScreenOn = false }
+    }
 
     Scaffold(
         topBar = {
@@ -171,6 +184,32 @@ fun ImportExportScreen(
                 modifier = Modifier.fillMaxWidth(),
             ) { Text("Choose file to import") }
 
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+            Text("Import Amazon book list", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "Choose a CSV from the Kindle Book List Exporter. Purchased Kindle and Audible books " +
+                    "are added, then each is matched to a print edition for its details, cover, BISAC " +
+                    "subjects and description. Books already imported are skipped.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                "Looking books up takes about half a minute each. Keep this screen open; if the import " +
+                    "stops, choose the same file again to pick up where it left off.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            OutlinedButton(
+                onClick = {
+                    importAmazon.launch(
+                        arrayOf("text/csv", "text/comma-separated-values", "text/plain", "application/octet-stream"),
+                    )
+                },
+                enabled = !state.busy,
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Choose Amazon book list") }
+
             if (state.busy) {
                 val progress = state.progress
                 if (progress == null || progress.total == 0) {
@@ -186,6 +225,7 @@ fun ImportExportScreen(
             }
             state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             state.importSummary?.let { ImportSummaryCard(it) }
+            state.amazonSummary?.let { AmazonSummaryCard(it) }
         }
     }
 }
@@ -216,6 +256,51 @@ private fun ImportSummaryCard(summary: ImportSummary) {
             summary.errors.forEach { Text(it, color = MaterialTheme.colorScheme.error) }
             summary.warnings.forEach {
                 Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+            }
+        }
+    }
+}
+
+@Composable
+private fun AmazonSummaryCard(summary: AmazonImportSummary) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            summary.error?.let {
+                Text("Import failed", style = MaterialTheme.typography.titleMedium)
+                Text(it, color = MaterialTheme.colorScheme.error)
+                return@Column
+            }
+            Text(
+                if (summary.remaining > 0) "Import paused" else "Import finished",
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Text("Added: ${summary.added}")
+            Text("Already in your library: ${summary.alreadyInLibrary}")
+            Text("Matched to a print edition: ${summary.matched}")
+            Text("No matching edition found: ${summary.unmatched}")
+            val leftOut = listOf(
+                "library loans" to summary.libraryLoans,
+                "borrowed books and samples" to summary.borrowed,
+                "books Amazon no longer has details for" to summary.unavailable,
+                "print books" to summary.otherFormats,
+            ).filter { it.second > 0 }
+            if (leftOut.isNotEmpty()) {
+                Text(
+                    "Left out: " + leftOut.joinToString(", ") { (label, count) -> "$count $label" },
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            if (summary.remaining > 0) {
+                Text(
+                    (if (summary.stoppedEarly) "Stopped after several lookups in a row failed. " else "") +
+                        "${summary.remaining} books still need looking up. Check the connection and " +
+                        "choose the same file again to finish them.",
+                    color = MaterialTheme.colorScheme.error,
+                )
             }
         }
     }

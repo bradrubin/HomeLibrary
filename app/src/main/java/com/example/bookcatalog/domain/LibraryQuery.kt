@@ -20,7 +20,8 @@ object LibraryQuery {
 
     /**
      * Matches every word of [query] against the title, subtitle, authors and publisher, ignoring
-     * case and accents. A query that looks like an ISBN also matches with hyphens or spaces.
+     * case and accents. A query that looks like an ISBN also matches with hyphens or spaces, and
+     * one that looks like an ASIN matches the ASIN.
      */
     fun matches(book: Book, query: String): Boolean {
         val words = comparable(query).split(' ').filter(String::isNotEmpty)
@@ -28,7 +29,9 @@ object LibraryQuery {
         val text = comparable(listOfNotNull(book.title, book.subtitle, book.authors, book.publisher).joinToString(" "))
         if (words.all { it in text }) return true
         val digits = IsbnUtils.normalize(query)
-        return digits.length >= 4 && digits.all { it.isDigit() || it == 'X' } &&
+        if (digits.length < 4) return false
+        if (book.asin?.contains(digits) == true) return true
+        return digits.all { it.isDigit() || it == 'X' } &&
             listOfNotNull(book.isbn13, book.isbn10).any { digits in it }
     }
 

@@ -6,13 +6,15 @@ import androidx.room.PrimaryKey
 
 @Entity(
     tableName = "books",
-    indices = [Index(value = ["isbn13"])],
+    indices = [Index(value = ["isbn13"]), Index(value = ["asin"])],
 )
 data class Book(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,
     val isbn13: String? = null,
     val isbn10: String? = null,
+    /** Amazon's ID for a Kindle or Audible edition, which has no ISBN of its own. */
+    val asin: String? = null,
     val title: String,
     val subtitle: String? = null,
     val authors: String? = null,

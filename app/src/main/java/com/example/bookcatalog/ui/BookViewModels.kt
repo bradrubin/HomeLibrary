@@ -8,6 +8,8 @@ import com.example.bookcatalog.data.metadata.BookMetadataRepository
 import com.example.bookcatalog.data.metadata.MetadataLookupResult
 import android.content.ContentResolver
 import android.net.Uri
+import com.example.bookcatalog.data.io.AmazonImportSummary
+import com.example.bookcatalog.data.io.AmazonImporter
 import com.example.bookcatalog.data.io.ImportOptions
 import com.example.bookcatalog.data.io.ImportSummary
 import com.example.bookcatalog.data.io.LibraryExporter
@@ -169,6 +171,7 @@ data class ImportExportUiState(
     val progress: TransferProgress? = null,
     val exportMessage: String? = null,
     val importSummary: ImportSummary? = null,
+    val amazonSummary: AmazonImportSummary? = null,
     val error: String? = null,
 )
 
@@ -176,6 +179,7 @@ data class ImportExportUiState(
 class ImportExportViewModel(
     private val exporter: LibraryExporter,
     private val importer: LibraryImporter,
+    private val amazonImporter: AmazonImporter,
     private val contentResolver: ContentResolver,
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(ImportExportUiState())
@@ -197,6 +201,15 @@ class ImportExportViewModel(
             input.use { importer.import(it, options, ::report) }
         }
         mutableState.update { it.copy(importSummary = summary) }
+    }
+
+    fun importAmazon(uri: Uri) = run("import") {
+        val summary = withContext(Dispatchers.IO) {
+            val input = contentResolver.openInputStream(uri)
+                ?: throw FileNotFoundException("The import file couldn't be opened.")
+            input.use { amazonImporter.import(it, ::report) }
+        }
+        mutableState.update { it.copy(amazonSummary = summary) }
     }
 
     private fun report(progress: TransferProgress) {

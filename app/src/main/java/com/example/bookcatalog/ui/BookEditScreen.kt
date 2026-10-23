@@ -75,6 +75,7 @@ import java.util.UUID
 private data class BookDraft(
     val isbn13: String = "",
     val isbn10: String = "",
+    val asin: String = "",
     val title: String = "",
     val subtitle: String = "",
     val authors: String = "",
@@ -98,6 +99,7 @@ private data class BookDraft(
         id = existingBook?.id ?: 0L,
         isbn13 = isbn13.normalizedIsbn().takeIf(String::isNotBlank),
         isbn10 = isbn10.normalizedIsbn().takeIf(String::isNotBlank),
+        asin = asin.normalizedIsbn().takeIf(String::isNotBlank),
         title = TitleCase.format(title.trim()),
         subtitle = subtitle.optional()?.let(TitleCase::format),
         authors = AuthorNames.normalize(authors),
@@ -125,6 +127,7 @@ private data class BookDraft(
         fun from(book: Book) = BookDraft(
             isbn13 = book.isbn13.orEmpty(),
             isbn10 = book.isbn10.orEmpty(),
+            asin = book.asin.orEmpty(),
             title = book.title,
             subtitle = book.subtitle.orEmpty(),
             authors = book.authors.orEmpty(),
@@ -471,6 +474,13 @@ fun BookEditScreen(
                 { draft = draft.copy(isbn10 = it) },
                 keyboardType = KeyboardType.Number,
                 trailingIcon = { IsbnCheckXButton(draft.isbn10) { draft = draft.copy(isbn10 = it) } },
+            )
+            BookTextField(
+                "ASIN",
+                draft.asin,
+                { draft = draft.copy(asin = it) },
+                keyboardType = KeyboardType.Ascii,
+                capitalization = KeyboardCapitalization.Characters,
             )
             BookTextField("Publisher", draft.publisher, { draft = draft.copy(publisher = it) }, capitalization = KeyboardCapitalization.Words)
             BookTextField(

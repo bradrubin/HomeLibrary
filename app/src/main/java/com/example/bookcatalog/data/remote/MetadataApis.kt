@@ -21,7 +21,27 @@ interface OpenLibraryApi {
     @Headers("User-Agent: BookCatalog/1.0 (personal home library)")
     @GET("isbn/{isbn}.json")
     suspend fun getEdition(@Path("isbn") isbn13: String): OpenLibraryEditionDto
+
+    /** Searches works by title and author; each result lists the ISBNs of all its editions. */
+    @Headers("User-Agent: BookCatalog/1.0 (personal home library)")
+    @GET("search.json")
+    suspend fun search(
+        @Query("title") title: String,
+        @Query("author") author: String?,
+        @Query("fields") fields: String = "title,author_name,isbn",
+        @Query("limit") limit: Int = 5,
+    ): OpenLibrarySearchResponseDto
 }
+
+data class OpenLibrarySearchResponseDto(
+    val docs: List<OpenLibrarySearchDocDto> = emptyList(),
+)
+
+data class OpenLibrarySearchDocDto(
+    val title: String? = null,
+    @Json(name = "author_name") val authorNames: List<String>? = null,
+    val isbn: List<String>? = null,
+)
 
 data class OpenLibraryEditionDto(
     @Json(name = "physical_format") val physicalFormat: String? = null,
