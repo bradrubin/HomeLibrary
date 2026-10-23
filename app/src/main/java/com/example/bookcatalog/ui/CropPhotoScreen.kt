@@ -139,9 +139,7 @@ fun CropPhotoScreen(
             BoxWithConstraints(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f)
-                    // Keeps the side handles clear of the screen-edge swipe that goes back.
-                    .padding(horizontal = 32.dp),
+                    .weight(1f),
                 contentAlignment = Alignment.Center,
             ) {
                 val image = remember(bitmap) { bitmap.asImageBitmap() }
@@ -159,9 +157,10 @@ fun CropPhotoScreen(
 
                             detectDragGestures(
                                 onDragStart = { point ->
+                                    val margin = IMAGE_MARGIN.toPx()
                                     val scale = min(
-                                        size.width / bitmap.width.toFloat(),
-                                        size.height / bitmap.height.toFloat(),
+                                        (size.width - 2 * margin) / bitmap.width.toFloat(),
+                                        (size.height - 2 * margin) / bitmap.height.toFloat(),
                                     )
                                     imageWidth = bitmap.width * scale
                                     imageHeight = bitmap.height * scale
@@ -210,9 +209,10 @@ fun CropPhotoScreen(
                         },
                 ) {
                     drawRect(Color.Black)
+                    val margin = IMAGE_MARGIN.toPx()
                     val scale = min(
-                        size.width / bitmap.width.toFloat(),
-                        size.height / bitmap.height.toFloat(),
+                        (size.width - 2 * margin) / bitmap.width.toFloat(),
+                        (size.height - 2 * margin) / bitmap.height.toFloat(),
                     )
                     val imageWidth = bitmap.width * scale
                     val imageHeight = bitmap.height * scale
@@ -292,3 +292,9 @@ private enum class Edge {
 private const val MIN_CROP_SIDE = 0.05f
 private val EDGE_TOUCH_RADIUS = 24.dp
 private val EDGE_HANDLE_LENGTH = 32.dp
+
+/**
+ * Space around the image inside the touch area, so a handle on the image's edge can be grabbed
+ * from either side, and the side handles stay clear of the screen-edge swipe that goes back.
+ */
+private val IMAGE_MARGIN = 32.dp
