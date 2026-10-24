@@ -128,7 +128,9 @@ class BookMetadataRepository(
                 message = if (details.allSourcesFailed) {
                     "Couldn’t connect to the book lookup services. Check your internet connection and try again."
                 } else {
-                    "No book details were found. You can enter them manually."
+                    // A misread barcode can still pass the check digit, so the ISBN itself may be wrong.
+                    "No book details were found for ISBN $isbn13. If that isn't the ISBN printed on " +
+                        "the book, scan again or enter it manually; otherwise you can enter the details yourself."
                 },
             )
         val coverDownloadFailed = details.coverDownloadFailed
