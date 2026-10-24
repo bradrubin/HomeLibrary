@@ -139,6 +139,7 @@ fun LibraryScreen(
                     filter = controls.filter,
                     formatCounts = state.formatCounts,
                     readStatusCounts = state.readStatusCounts,
+                    shownCount = state.books.size,
                     onFilter = viewModel::setFilter,
                     grid = controls.grid,
                     canSelect = !state.libraryIsEmpty,
@@ -237,6 +238,7 @@ private fun LibraryTopBar(
     filter: LibraryFilter,
     formatCounts: Map<String, Int>,
     readStatusCounts: Map<String, Int>,
+    shownCount: Int,
     onFilter: (LibraryFilter) -> Unit,
     grid: Boolean,
     canSelect: Boolean,
@@ -250,7 +252,7 @@ private fun LibraryTopBar(
     TopAppBar(
         title = { Text("Book Catalog") },
         actions = {
-            FilterMenu(filter, formatCounts, readStatusCounts, onFilter)
+            FilterMenu(filter, formatCounts, readStatusCounts, shownCount, onFilter)
             Box {
                 IconButton(onClick = { sortExpanded = true }) {
                     Icon(Icons.AutoMirrored.Filled.Sort, contentDescription = "Sort by ${sort.label.lowercase()}")
@@ -303,15 +305,16 @@ private fun LibraryTopBar(
 }
 
 /**
- * Checkboxes for the formats and read statuses in the library, each with its count. Choices in
- * one group are combined with "or", and the two groups with "and". The menu stays open while
- * choices are toggled.
+ * Checkboxes for the formats and read statuses in the library, each with its count, under the
+ * library's total. Choices in one group are combined with "or", and the two groups with "and".
+ * The menu stays open while choices are toggled.
  */
 @Composable
 private fun FilterMenu(
     filter: LibraryFilter,
     formatCounts: Map<String, Int>,
     readStatusCounts: Map<String, Int>,
+    shownCount: Int,
     onFilter: (LibraryFilter) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -331,6 +334,15 @@ private fun FilterMenu(
             }
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            // Every book has exactly one format value, so these counts add up to the library.
+            val total = formatCounts.values.sum()
+            Text(
+                if (shownCount == total) "$total ${if (total == 1) "book" else "books"}"
+                else "Showing $shownCount of $total",
+                style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            )
+            HorizontalDivider()
             FilterHeading("Format")
             formats.forEach { format ->
                 FilterChoice(
