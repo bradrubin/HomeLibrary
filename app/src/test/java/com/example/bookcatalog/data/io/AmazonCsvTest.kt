@@ -36,6 +36,17 @@ class AmazonCsvTest {
         assertEquals("Audiobook", entanglement.format)
         assertEquals("Amir Aczel", entanglement.authors)
         assertNull(entanglement.pageCount)
+        assertEquals(6 * 60 + 16, entanglement.audioMinutes)
+        assertNull(solitaire.audioMinutes)
+    }
+
+    @Test
+    fun readsListeningLengthsInAudiblesWordings() {
+        assertEquals(376, AmazonCsv.listeningMinutes("6 hours and 16 minutes"))
+        assertEquals(61, AmazonCsv.listeningMinutes("1 hour and 1 minute"))
+        assertEquals(45, AmazonCsv.listeningMinutes("45 minutes"))
+        assertEquals(120, AmazonCsv.listeningMinutes("2 hours"))
+        assertNull(AmazonCsv.listeningMinutes(""))
     }
 
     @Test(expected = IllegalArgumentException::class)

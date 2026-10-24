@@ -98,6 +98,8 @@ private data class BookDraft(
     val publisher: String = "",
     val publishedDate: String = "",
     val pageCount: String = "",
+    val audioHours: String = "",
+    val audioMinutes: String = "",
     val format: String = "",
     val language: String = Language.DEFAULT,
     val subjects: String = "",
@@ -122,6 +124,7 @@ private data class BookDraft(
         publisher = publisher.optional(),
         publishedDate = publishedDate.optional(),
         pageCount = pageCount.toIntOrNull(),
+        audioMinutes = audioLength(),
         format = format.optional(),
         language = language.optional(),
         subjects = subjects.optional(),
@@ -139,6 +142,16 @@ private data class BookDraft(
         dateModified = System.currentTimeMillis(),
     )
 
+    val hasAudioLength: Boolean get() = audioHours.isNotBlank() || audioMinutes.isNotBlank()
+
+    /** The listening length in minutes, or null when it is blank or isn't whole numbers. */
+    fun audioLength(): Int? {
+        if (!hasAudioLength) return null
+        val hours = if (audioHours.isBlank()) 0 else audioHours.trim().toIntOrNull() ?: return null
+        val minutes = if (audioMinutes.isBlank()) 0 else audioMinutes.trim().toIntOrNull() ?: return null
+        return (hours * 60 + minutes).takeIf { it > 0 }
+    }
+
     companion object {
         fun from(book: Book) = BookDraft(
             isbn13 = book.isbn13.orEmpty(),
@@ -150,6 +163,8 @@ private data class BookDraft(
             publisher = book.publisher.orEmpty(),
             publishedDate = book.publishedDate.orEmpty(),
             pageCount = book.pageCount?.toString().orEmpty(),
+            audioHours = book.audioMinutes?.takeIf { it >= 60 }?.let { (it / 60).toString() }.orEmpty(),
+            audioMinutes = book.audioMinutes?.let { (it % 60).toString() }.orEmpty(),
             format = book.format.orEmpty(),
             language = book.language.orEmpty(),
             subjects = book.subjects.orEmpty(),
@@ -557,6 +572,8 @@ fun BookEditScreen(
                                 "Publication year must be a four-digit year."
                             draft.pageCount.isNotBlank() && pages == null ->
                                 "Page count must be a whole number."
+                            draft.hasAudioLength && draft.audioLength() == null ->
+                                "Audio length must be whole hours and minutes."
                             draft.rating.isNotBlank() && (rating == null || rating !in 0..5) ->
                                 "Rating must be between 0 and 5."
                             else -> null
@@ -683,6 +700,25 @@ fun BookEditScreen(
                     value = draft.format,
                     choices = listOf("" to "Not set") + BookFormat.choices.map { it to it },
                 ) { draft = draft.copy(format = it) }
+                // Kept visible for a book that has a length, so changing its format doesn't hide it.
+                if (draft.format == "Audiobook" || draft.hasAudioLength) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        BookTextField(
+                            "Audio hours",
+                            draft.audioHours,
+                            { draft = draft.copy(audioHours = it) },
+                            keyboardType = KeyboardType.Number,
+                            modifier = Modifier.weight(1f),
+                        )
+                        BookTextField(
+                            "Minutes",
+                            draft.audioMinutes,
+                            { draft = draft.copy(audioMinutes = it) },
+                            keyboardType = KeyboardType.Number,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
                 BookTextField("Language", draft.language, { draft = draft.copy(language = it) }, capitalization = KeyboardCapitalization.Words)
                 BookTextField("Subjects (BISAC)", draft.subjects, { draft = draft.copy(subjects = it) }, capitalization = KeyboardCapitalization.Words)
                 Button(
@@ -801,6 +837,7 @@ private fun BookTextField(
     trailingIcon: (@Composable () -> Unit)? = null,
     supportingText: String? = null,
     placeholder: String? = null,
+    modifier: Modifier = Modifier,
 ) {
     val bringIntoViewRequester = remember { BringIntoViewRequester() }
     val scope = rememberCoroutineScope()
@@ -819,7 +856,7 @@ private fun BookTextField(
         },
         supportingText = supportingText?.let { text -> { Text(text) } },
         trailingIcon = trailingIcon,
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .bringIntoViewRequester(bringIntoViewRequester)
             .onFocusChanged { focusState ->

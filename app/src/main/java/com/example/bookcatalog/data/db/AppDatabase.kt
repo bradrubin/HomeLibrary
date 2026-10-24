@@ -8,7 +8,7 @@ import com.example.bookcatalog.domain.AuthorNames
 
 @Database(
     entities = [Book::class],
-    version = 3,
+    version = 4,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -37,6 +37,13 @@ abstract class AppDatabase : RoomDatabase() {
                 for ((id, authors) in changes) {
                     db.execSQL("UPDATE books SET authors = ? WHERE id = ?", arrayOf(authors, id))
                 }
+            }
+        }
+
+        /** Adds an audiobook's listening length, in minutes. */
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE books ADD COLUMN audioMinutes INTEGER")
             }
         }
     }

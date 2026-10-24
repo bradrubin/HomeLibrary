@@ -21,11 +21,11 @@ class BookCsvTest {
         assertEquals(listOf(0xEF, 0xBB, 0xBF), bytes.take(3).map { it.toInt() and 0xff })
         assertTrue(
             text.startsWith(
-                "\uFEFFisbn13,isbn10,asin,title,subtitle,authors,publisher,published_date,page_count,format,language," +
+                "\uFEFFisbn13,isbn10,asin,title,subtitle,authors,publisher,published_date,page_count,audio_minutes,format,language," +
                     "subjects,description,location,notes,rating,read_status,date_added,cover_file,cover_source_url\r\n",
             ),
         )
-        assertTrue(text.endsWith(",,,Plain,,,,,,,,,,,,,,2026-10-21,,\r\n"))
+        assertTrue(text.endsWith(",,,Plain,,,,,,,,,,,,,,,2026-10-21,,\r\n"))
     }
 
     @Test

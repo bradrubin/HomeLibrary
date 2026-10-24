@@ -260,6 +260,7 @@ class LibraryImporter(
             publisher = text(CsvColumn.PUBLISHER, base.publisher),
             publishedDate = year(),
             pageCount = number(CsvColumn.PAGE_COUNT, "Page count", base.pageCount, 1..100_000),
+            audioMinutes = number(CsvColumn.AUDIO_MINUTES, "Audio length", base.audioMinutes, 1..100_000),
             format = format(),
             language = Language.name(text(CsvColumn.LANGUAGE, base.language)),
             subjects = text(CsvColumn.SUBJECTS, base.subjects),

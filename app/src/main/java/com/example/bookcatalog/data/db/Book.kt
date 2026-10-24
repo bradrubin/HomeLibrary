@@ -21,6 +21,8 @@ data class Book(
     val publisher: String? = null,
     val publishedDate: String? = null,
     val pageCount: Int? = null,
+    /** An audiobook's listening length; its page count stays that of the matching print edition. */
+    val audioMinutes: Int? = null,
     val format: String? = null,
     val language: String? = null,
     val subjects: String? = null,

@@ -18,6 +18,7 @@ data class AmazonItem(
     /** A [com.example.bookcatalog.domain.BookFormat] choice. */
     val format: String,
     val pageCount: Int?,
+    val audioMinutes: Int?,
     val acquired: LocalDate?,
     val genres: List<String>,
 )
@@ -44,6 +45,7 @@ object AmazonCsv {
     private const val FORMAT = "Format"
     private const val TITLE = "Title"
     private const val PAGES = "Pages"
+    private const val LISTENING_LENGTH = "Listening Length"
     private const val GENRES = "Genres"
     private const val FIRST_AUTHOR = "First Author"
     private const val ALL_AUTHORS = "All Authors"
@@ -91,6 +93,7 @@ object AmazonCsv {
                         authors = authors(format, value(FIRST_AUTHOR), value(ALL_AUTHORS)),
                         format = format,
                         pageCount = value(PAGES).toIntOrNull()?.takeIf { it > 0 },
+                        audioMinutes = listeningMinutes(value(LISTENING_LENGTH)),
                         acquired = try {
                             LocalDate.parse(value(ACQUIRED))
                         } catch (exception: DateTimeParseException) {
@@ -103,6 +106,17 @@ object AmazonCsv {
             }
         }
         return list.copy(items = items)
+    }
+
+    private val hoursPattern = Regex("""(\d+)\s*hours?""")
+    private val minutesPattern = Regex("""(\d+)\s*minutes?""")
+
+    /** Reads Audible's "6 hours and 16 minutes", "45 minutes" or "1 hour", or null when it has neither. */
+    internal fun listeningMinutes(text: String): Int? {
+        val hours = hoursPattern.find(text)?.groupValues?.get(1)?.toIntOrNull()
+        val minutes = minutesPattern.find(text)?.groupValues?.get(1)?.toIntOrNull()
+        if (hours == null && minutes == null) return null
+        return ((hours ?: 0) * 60 + (minutes ?: 0)).takeIf { it > 0 }
     }
 
     /**

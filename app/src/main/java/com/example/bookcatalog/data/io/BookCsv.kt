@@ -22,6 +22,7 @@ enum class CsvColumn(val header: String) {
     PUBLISHER("publisher"),
     PUBLISHED_DATE("published_date"),
     PAGE_COUNT("page_count"),
+    AUDIO_MINUTES("audio_minutes"),
     FORMAT("format"),
     LANGUAGE("language"),
     SUBJECTS("subjects"),
@@ -117,6 +118,7 @@ object BookCsv {
         CsvColumn.PUBLISHER -> publisher
         CsvColumn.PUBLISHED_DATE -> publishedDate
         CsvColumn.PAGE_COUNT -> pageCount?.toString()
+        CsvColumn.AUDIO_MINUTES -> audioMinutes?.toString()
         CsvColumn.FORMAT -> format
         CsvColumn.LANGUAGE -> language
         CsvColumn.SUBJECTS -> subjects

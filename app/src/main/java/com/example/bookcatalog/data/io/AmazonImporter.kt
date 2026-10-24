@@ -123,6 +123,7 @@ class AmazonImporter(
         authors = authors,
         format = format,
         pageCount = pageCount,
+        audioMinutes = audioMinutes,
         // Kept until lookup, when HomeChat turns them into BISAC headings.
         subjects = genres.joinToString("; ").ifEmpty { null },
         asin = asin,
