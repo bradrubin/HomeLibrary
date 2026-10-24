@@ -87,7 +87,8 @@ class BookMetadataRepository(
         ) ?: return@supervisorScope FetchedDetails(
             book = null,
             allSourcesFailed = results.values.all(SourceResult::failed),
-        )
+        ).also { Log.i(TAG, "No source had usable details for $isbn13 (all failed: ${it.allSourcesFailed})") }
+        Log.i(TAG, "Merged details for $isbn13 from ${book.dataSource}: \"${book.title}\"")
 
         var withCover = book
         var coverDownloadErrored = false
@@ -180,16 +181,28 @@ class BookMetadataRepository(
     }
 
     /** Never throws for a failing source, so one source can't keep the others from being used. */
-    private suspend fun fetchSafely(source: BookMetadataSource, isbn13: String): SourceResult =
-        try {
-            withTimeoutOrNull(SOURCE_TIMEOUT_MS) { SourceResult(source.fetch(isbn13), failed = false) }
-                ?: SourceResult(null, failed = true).also { Log.w(TAG, "${source.name} lookup timed out for $isbn13") }
+    private suspend fun fetchSafely(source: BookMetadataSource, isbn13: String): SourceResult {
+        val startedAt = System.nanoTime()
+        fun elapsedMs() = (System.nanoTime() - startedAt) / 1_000_000
+        return try {
+            val result = withTimeoutOrNull(SOURCE_TIMEOUT_MS) { SourceResult(source.fetch(isbn13), failed = false) }
+            if (result == null) {
+                Log.w(TAG, "${source.name} lookup timed out for $isbn13 after ${elapsedMs()} ms")
+                SourceResult(null, failed = true)
+            } else {
+                // Logged either way, so a lookup that found nothing shows which sources answered.
+                val outcome = result.metadata?.let { "found \"${it.title}\"" } ?: "had no record"
+                Log.i(TAG, "${source.name} $outcome for $isbn13 in ${elapsedMs()} ms")
+                result
+            }
         } catch (exception: CancellationException) {
+            Log.i(TAG, "${source.name} lookup cancelled for $isbn13 after ${elapsedMs()} ms")
             throw exception
         } catch (exception: Exception) {
-            Log.w(TAG, "${source.name} lookup failed for $isbn13", exception)
+            Log.w(TAG, "${source.name} lookup failed for $isbn13 after ${elapsedMs()} ms", exception)
             SourceResult(null, failed = true)
         }
+    }
 
     private fun String?.withHomeChat(): String =
         if (orEmpty().split('+').contains("HomeChat")) this.orEmpty() else listOfNotNull(this, "HomeChat").joinToString("+")

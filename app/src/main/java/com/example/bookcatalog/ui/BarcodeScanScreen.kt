@@ -67,9 +67,16 @@ fun BarcodeScanScreen(
             try {
                 val existingBook = if (addCopy) null else viewModel.findExistingBook(isbn13)
                 if (existingBook != null) {
+                    Log.i(TAG, "ISBN $isbn13 is already in the library as book ${existingBook.id}")
                     duplicateBook = existingBook
                 } else {
-                    onBookFound(viewModel.lookup(isbn13))
+                    val result = viewModel.lookup(isbn13)
+                    Log.i(
+                        TAG,
+                        "Lookup for $isbn13 finished: title \"${result.book.title}\", " +
+                            "message ${result.message}, warning ${result.warning}",
+                    )
+                    onBookFound(result)
                 }
             } catch (exception: SQLiteException) {
                 Log.e(TAG, "Could not check the library for ISBN $isbn13", exception)
@@ -82,6 +89,8 @@ fun BarcodeScanScreen(
 
     fun onScannedValue(rawValue: String?) {
         val isbn13 = rawValue?.let(IsbnUtils::fromBarcode)
+        // The raw value shows a misread barcode that still passed the ISBN check digit.
+        Log.i(TAG, "Scanned barcode \"$rawValue\" as ISBN $isbn13")
         if (isbn13 == null) {
             scanError =
                 "That barcode isn't a valid book ISBN. Enter the ISBN manually or scan a 13-digit book barcode."
