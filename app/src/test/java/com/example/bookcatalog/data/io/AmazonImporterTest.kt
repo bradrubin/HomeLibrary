@@ -69,6 +69,28 @@ class AmazonImporterTest {
     }
 
     @Test
+    fun retriesABookThatFailedOnceBeforeFinishing() = runBlocking {
+        val store = FakeStore()
+        val looked = mutableListOf<String>()
+        val importer = importer(store) { book ->
+            looked += book.title
+            val firstTry = looked.count { it == book.title } == 1
+            if (book.title == "First" && firstTry) {
+                EnrichResult(book, matchedIsbn = false, complete = false)
+            } else {
+                EnrichResult(book.copy(dataSource = "AmazonCSV+HomeChat"), matchedIsbn = true, complete = true)
+            }
+        }
+
+        val summary = importer.import(csv(row("B0000000A1", "First"), row("B0000000A2", "Second")))
+
+        assertEquals(listOf("First", "Second", "First"), looked)
+        assertEquals(2, summary.matched)
+        assertEquals(0, summary.remaining)
+        assertTrue(store.books.all { it.dataSource == "AmazonCSV+HomeChat" })
+    }
+
+    @Test
     fun stopsAfterFiveFailuresInARow() = runBlocking {
         val store = FakeStore()
         var calls = 0

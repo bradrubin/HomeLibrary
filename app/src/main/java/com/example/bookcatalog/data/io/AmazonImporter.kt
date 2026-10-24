@@ -38,7 +38,7 @@ data class AmazonImportSummary(
  * Imports the Kindle and Audible books from an Amazon book list in two phases, so a long first
  * import can be picked up again: every new book is saved straight away with Amazon's details and
  * [SOURCE] as its data source, then each book still marked that way is looked up and saved in turn.
- * Importing the file again skips books whose ASIN is already in the library and finishes the rest.
+ * A book whose lookup failed is tried once more at the end. Importing the file again skips books whose ASIN is already in the library and finishes the rest.
  */
 class AmazonImporter(
     private val store: LibraryStore,
@@ -73,33 +73,49 @@ class AmazonImporter(
         }
 
         val pending = store.allBooks().filter { it.dataSource == SOURCE }
+        val failed = mutableListOf<Book>()
         var failuresInARow = 0
         for ((index, book) in pending.withIndex()) {
             onProgress(TransferProgress("Looking up books", index, pending.size))
             if (index > 0) pause(LOOKUP_INTERVAL_MS)
-            val result = enricher.enrich(book)
-            // The book may have been deleted while it was being looked up.
-            if (store.getBook(book.id) != null) {
-                store.update(result.book.copy(id = book.id, dateModified = now()))
-            }
-            if (!result.complete) {
+            val result = lookUp(book)
+            if (result == null) {
+                failed += book
                 failuresInARow++
-                summary = summary.copy(remaining = summary.remaining + 1)
                 if (failuresInARow >= MAX_FAILURES_IN_A_ROW) {
                     val notTried = pending.size - index - 1
-                    return summary.copy(remaining = summary.remaining + notTried, stoppedEarly = true)
+                    return summary.copy(remaining = failed.size + notTried, stoppedEarly = true)
                 }
                 continue
             }
             failuresInARow = 0
-            summary = if (result.matchedIsbn) {
-                summary.copy(matched = summary.matched + 1)
-            } else {
-                summary.copy(unmatched = summary.unmatched + 1)
-            }
+            summary = summary.counting(result)
         }
-        return summary
+
+        // A failure is usually a model or service that was briefly too slow, so each gets one more try.
+        var remaining = failed.size
+        for ((index, book) in failed.withIndex()) {
+            onProgress(TransferProgress("Retrying books", index, failed.size))
+            pause(LOOKUP_INTERVAL_MS)
+            val result = lookUp(book) ?: continue
+            remaining--
+            summary = summary.counting(result)
+        }
+        return summary.copy(remaining = remaining)
     }
+
+    /** Looks the book up and saves the result, returning null when it should be tried again. */
+    private suspend fun lookUp(book: Book): EnrichResult? {
+        val result = enricher.enrich(book)
+        // The book may have been deleted while it was being looked up.
+        if (store.getBook(book.id) != null) {
+            store.update(result.book.copy(id = book.id, dateModified = now()))
+        }
+        return result.takeIf(EnrichResult::complete)
+    }
+
+    private fun AmazonImportSummary.counting(result: EnrichResult): AmazonImportSummary =
+        if (result.matchedIsbn) copy(matched = matched + 1) else copy(unmatched = unmatched + 1)
 
     private fun AmazonItem.toBook(): Book = Book(
         title = title,
