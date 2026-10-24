@@ -99,9 +99,16 @@ class LibraryImporter(
 
         store.inTransaction {
             // Duplicates are judged against the library as it was, so copies within the file all import.
-            val existingByIsbn = store.allBooks()
+            val library = store.allBooks()
+            val existingByIsbn = library
                 .filter { it.isbn13 != null }
                 .groupBy { requireNotNull(it.isbn13) }
+                .mapValues { (_, books) -> books.minBy(Book::id) }
+            // Amazon books may have no ISBN, or share one when a Kindle and an Audible edition
+            // matched the same print edition, so their ASIN is checked first.
+            val existingByAsin = library
+                .filter { it.asin != null }
+                .groupBy { requireNotNull(it.asin) }
                 .mapValues { (_, books) -> books.minBy(Book::id) }
             parsed.rows.forEachIndexed { index, row ->
                 onProgress(TransferProgress("Importing books", index, parsed.rows.size))
@@ -113,7 +120,8 @@ class LibraryImporter(
                 val isbn = parseIsbn(row)
                 if (isbn is IsbnValue.Invalid) invalidIsbnRows += row.rowNumber
                 val isbn13 = (isbn as? IsbnValue.Valid)?.isbn13
-                val existing = isbn13?.let(existingByIsbn::get)
+                val asin = row.values[CsvColumn.ASIN]?.trim()?.uppercase()?.takeIf(String::isNotEmpty)
+                val existing = asin?.let(existingByAsin::get) ?: isbn13?.let(existingByIsbn::get)
                 val base = when {
                     existing == null -> null
                     options.duplicates == DuplicateHandling.SKIP -> {

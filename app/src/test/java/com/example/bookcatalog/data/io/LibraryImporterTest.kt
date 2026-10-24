@@ -91,6 +91,28 @@ class LibraryImporterTest {
     }
 
     @Test
+    fun overwriteMatchesAmazonBooksByAsin() {
+        val store = FakeLibraryStore(
+            Book(id = 3, asin = "B006431ADS", title = "Simplify"),
+            Book(id = 4, isbn13 = "9781780746067", asin = "B01ENXQY1S", title = "The Big Picture", format = "Audiobook"),
+            Book(id = 5, isbn13 = "9781780746067", asin = "B014EOUMZA", title = "The Big Picture", format = "Kindle"),
+        )
+
+        val summary = import(
+            store,
+            "title,isbn13,asin,notes\n" +
+                "Simplify,,b006431ads,no ISBN\n" +
+                "The Big Picture,9781780746067,B01ENXQY1S,audio\n" +
+                "The Big Picture,9781780746067,B014EOUMZA,kindle\n",
+            DuplicateHandling.OVERWRITE,
+        )
+
+        assertEquals(3, summary.updated)
+        assertEquals(0, summary.imported)
+        assertEquals(listOf("no ISBN", "audio", "kindle"), store.books.sortedBy(Book::id).map { it.notes })
+    }
+
+    @Test
     fun keepBothAddsAnotherCopy() {
         val store = FakeLibraryStore(Book(id = 7, isbn13 = "9780441013593", title = "Dune"))
 
