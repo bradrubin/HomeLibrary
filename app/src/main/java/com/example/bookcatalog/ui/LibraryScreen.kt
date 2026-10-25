@@ -312,8 +312,9 @@ private fun LibraryTopBar(
 
 /**
  * Checkboxes for the formats and read statuses in the library, each with its count, under the
- * library's total, then a row of stars for a minimum rating and a checkbox for unrated books.
- * Choices in one group are combined with "or", and the groups with "and". The menu stays open
+ * library's total, then a row of stars for a minimum rating and a checkbox for unrated books,
+ * either of which clears the other. Choices in one group are combined with "or", and the groups
+ * with "and". The menu stays open
  * while choices are toggled.
  */
 @Composable
@@ -382,14 +383,17 @@ private fun FilterMenu(
                     minRating = minRating,
                     count = ratingCounts.filterKeys { it != LibraryFilter.NO_RATING && it >= (minRating ?: 1) }
                         .values.sum(),
-                ) { onFilter(filter.copy(minRating = it)) }
+                ) { onFilter(filter.copy(minRating = it, unrated = filter.unrated && it == null)) }
             }
             if (showUnrated) {
                 FilterChoice(
                     label = "Not rated",
                     count = unratedCount,
                     checked = filter.unrated,
-                ) { onFilter(filter.copy(unrated = !filter.unrated)) }
+                ) {
+                    // Unrated books and a minimum rating can't both apply, so each clears the other.
+                    onFilter(filter.copy(unrated = !filter.unrated, minRating = if (filter.unrated) filter.minRating else null))
+                }
             }
             if (filter.isActive) {
                 HorizontalDivider()
