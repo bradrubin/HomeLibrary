@@ -12,24 +12,39 @@ enum class SortOrder(val label: String) {
 
 /**
  * Limits the library to some formats and read statuses; an empty set allows any. A book with no
- * format matches [NO_FORMAT], and one with no read status counts as unread.
+ * format matches [NO_FORMAT], and one with no read status counts as unread. The rating choices,
+ * books rated at least [minRating] stars and [unrated] books, are combined with "or"; with
+ * neither chosen any rating is allowed.
  */
 data class LibraryFilter(
     val formats: Set<String> = emptySet(),
     val readStatuses: Set<String> = emptySet(),
+    val minRating: Int? = null,
+    val unrated: Boolean = false,
 ) {
-    val isActive: Boolean get() = formats.isNotEmpty() || readStatuses.isNotEmpty()
+    val isActive: Boolean
+        get() = formats.isNotEmpty() || readStatuses.isNotEmpty() || minRating != null || unrated
 
     fun matches(book: Book): Boolean =
         (formats.isEmpty() || formatOf(book) in formats) &&
-            (readStatuses.isEmpty() || readStatusOf(book) in readStatuses)
+            (readStatuses.isEmpty() || readStatusOf(book) in readStatuses) &&
+            matchesRating(ratingOf(book))
+
+    private fun matchesRating(rating: Int): Boolean {
+        if (minRating == null && !unrated) return true
+        return (unrated && rating == NO_RATING) || (minRating != null && rating >= minRating)
+    }
 
     companion object {
         const val NO_FORMAT = ""
+        const val NO_RATING = 0
 
         fun formatOf(book: Book): String = book.format?.takeIf(String::isNotBlank) ?: NO_FORMAT
 
         fun readStatusOf(book: Book): String = book.readStatus?.takeIf(String::isNotBlank) ?: ReadStatus.UNREAD
+
+        /** The book's stars, or [NO_RATING]; a stored 0, as the edit screen treats it, is unrated. */
+        fun ratingOf(book: Book): Int = book.rating?.takeIf { it in 1..5 } ?: NO_RATING
     }
 }
 

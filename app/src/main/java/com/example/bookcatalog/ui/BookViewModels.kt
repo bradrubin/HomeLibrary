@@ -51,9 +51,10 @@ data class LibraryUiState(
     /** The books matching the search, in sort order. */
     val books: List<Book> = emptyList(),
     val libraryIsEmpty: Boolean = true,
-    /** How many books in the whole library have each format and read status, to filter by. */
+    /** How many books in the whole library have each format, read status and rating, to filter by. */
     val formatCounts: Map<String, Int> = emptyMap(),
     val readStatusCounts: Map<String, Int> = emptyMap(),
+    val ratingCounts: Map<Int, Int> = emptyMap(),
     val controls: LibraryControls = LibraryControls(),
 )
 
@@ -75,6 +76,7 @@ class LibraryViewModel(
             libraryIsEmpty = books.isEmpty(),
             formatCounts = books.groupingBy(LibraryFilter::formatOf).eachCount(),
             readStatusCounts = books.groupingBy(LibraryFilter::readStatusOf).eachCount(),
+            ratingCounts = books.groupingBy(LibraryFilter::ratingOf).eachCount(),
             // Books deleted elsewhere drop out of the selection.
             controls = controls.copy(selectedIds = controls.selectedIds.filterTo(HashSet()) { it in ids }),
         )

@@ -10,11 +10,13 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -39,6 +41,8 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.SaveAlt
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SelectAll
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
@@ -139,6 +143,7 @@ fun LibraryScreen(
                     filter = controls.filter,
                     formatCounts = state.formatCounts,
                     readStatusCounts = state.readStatusCounts,
+                    ratingCounts = state.ratingCounts,
                     shownCount = state.books.size,
                     onFilter = viewModel::setFilter,
                     grid = controls.grid,
@@ -238,6 +243,7 @@ private fun LibraryTopBar(
     filter: LibraryFilter,
     formatCounts: Map<String, Int>,
     readStatusCounts: Map<String, Int>,
+    ratingCounts: Map<Int, Int>,
     shownCount: Int,
     onFilter: (LibraryFilter) -> Unit,
     grid: Boolean,
@@ -252,7 +258,7 @@ private fun LibraryTopBar(
     TopAppBar(
         title = { Text("Book Catalog") },
         actions = {
-            FilterMenu(filter, formatCounts, readStatusCounts, shownCount, onFilter)
+            FilterMenu(filter, formatCounts, readStatusCounts, ratingCounts, shownCount, onFilter)
             Box {
                 IconButton(onClick = { sortExpanded = true }) {
                     Icon(Icons.AutoMirrored.Filled.Sort, contentDescription = "Sort by ${sort.label.lowercase()}")
@@ -306,14 +312,16 @@ private fun LibraryTopBar(
 
 /**
  * Checkboxes for the formats and read statuses in the library, each with its count, under the
- * library's total. Choices in one group are combined with "or", and the two groups with "and".
- * The menu stays open while choices are toggled.
+ * library's total, then a row of stars for a minimum rating and a checkbox for unrated books.
+ * Choices in one group are combined with "or", and the groups with "and". The menu stays open
+ * while choices are toggled.
  */
 @Composable
 private fun FilterMenu(
     filter: LibraryFilter,
     formatCounts: Map<String, Int>,
     readStatusCounts: Map<String, Int>,
+    ratingCounts: Map<Int, Int>,
     shownCount: Int,
     onFilter: (LibraryFilter) -> Unit,
 ) {
@@ -323,6 +331,10 @@ private fun FilterMenu(
         .filter { (formatCounts[it] ?: 0) > 0 || it in filter.formats }
     val readStatuses = ReadStatus.choices
         .filter { (readStatusCounts[it] ?: 0) > 0 || it in filter.readStatuses }
+    val unratedCount = ratingCounts[LibraryFilter.NO_RATING] ?: 0
+    val showStars = ratingCounts.any { (rating, count) -> rating != LibraryFilter.NO_RATING && count > 0 } ||
+        filter.minRating != null
+    val showUnrated = (showStars && unratedCount > 0) || filter.unrated
 
     Box {
         IconButton(onClick = { expanded = true }) {
@@ -360,6 +372,25 @@ private fun FilterMenu(
                     checked = status in filter.readStatuses,
                 ) { onFilter(filter.copy(readStatuses = filter.readStatuses.toggle(status))) }
             }
+            if (showStars || showUnrated) {
+                HorizontalDivider()
+                FilterHeading("Rating")
+            }
+            if (showStars) {
+                val minRating = filter.minRating
+                MinimumRatingChoice(
+                    minRating = minRating,
+                    count = ratingCounts.filterKeys { it != LibraryFilter.NO_RATING && it >= (minRating ?: 1) }
+                        .values.sum(),
+                ) { onFilter(filter.copy(minRating = it)) }
+            }
+            if (showUnrated) {
+                FilterChoice(
+                    label = "Not rated",
+                    count = unratedCount,
+                    checked = filter.unrated,
+                ) { onFilter(filter.copy(unrated = !filter.unrated)) }
+            }
             if (filter.isActive) {
                 HorizontalDivider()
                 DropdownMenuItem(
@@ -391,6 +422,37 @@ private fun FilterChoice(label: String, count: Int, checked: Boolean, onToggle: 
         leadingIcon = { Checkbox(checked = checked, onCheckedChange = null) },
         onClick = onToggle,
     )
+}
+
+/**
+ * Five tappable stars choosing the fewest stars a book needs; tapping the highest lit star clears
+ * it. Shows how many books it allows, or how many are rated when no minimum is chosen.
+ */
+@Composable
+private fun MinimumRatingChoice(minRating: Int?, count: Int, onChange: (Int?) -> Unit) {
+    val rating = minRating ?: 0
+    Row(
+        modifier = Modifier.padding(horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        (1..5).forEach { star ->
+            IconButton(
+                onClick = { onChange(if (star == rating) null else star) },
+                modifier = Modifier.size(40.dp),
+            ) {
+                Icon(
+                    imageVector = if (star <= rating) Icons.Filled.Star else Icons.Filled.StarBorder,
+                    contentDescription = if (star == 5) "5 stars" else "At least $star ${if (star == 1) "star" else "stars"}",
+                    tint = if (star <= rating) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        Text(
+            if (minRating == null) "Rated ($count)" else if (minRating == 5) "5 ($count)" else "$minRating+ ($count)",
+            style = MaterialTheme.typography.bodyLarge,
+            modifier = Modifier.padding(start = 8.dp, end = 12.dp),
+        )
+    }
 }
 
 private fun Set<String>.toggle(value: String): Set<String> = if (value in this) this - value else this + value

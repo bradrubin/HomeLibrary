@@ -83,4 +83,23 @@ class LibraryQueryTest {
         assertEquals(listOf(11L), shown(LibraryFilter(formats = setOf("Kindle"), readStatuses = setOf("read"))))
         assertEquals(listOf(13L), shown(LibraryFilter(formats = setOf(LibraryFilter.NO_FORMAT))))
     }
+
+    @Test
+    fun filtersByRating() {
+        val five = Book(id = 20, title = "A", rating = 5)
+        val four = Book(id = 21, title = "B", rating = 4)
+        val two = Book(id = 22, title = "C", rating = 2)
+        val unrated = Book(id = 23, title = "D")
+        val zero = Book(id = 24, title = "E", rating = 0)
+        val books = listOf(five, four, two, unrated, zero)
+
+        fun shown(filter: LibraryFilter) = LibraryQuery.apply(books, "", SortOrder.TITLE, filter).map { it.id }
+
+        assertEquals(listOf(20L, 21L), shown(LibraryFilter(minRating = 4)))
+        // A stored rating of 0 counts as unrated.
+        assertEquals(listOf(23L, 24L), shown(LibraryFilter(unrated = true)))
+        assertEquals(listOf(20L, 23L, 24L), shown(LibraryFilter(minRating = 5, unrated = true)))
+        assertTrue(LibraryFilter(unrated = true).isActive)
+        assertFalse(LibraryFilter().isActive)
+    }
 }
