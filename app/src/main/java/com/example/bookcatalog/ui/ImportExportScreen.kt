@@ -25,6 +25,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -34,6 +35,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -45,6 +47,8 @@ import com.example.bookcatalog.data.io.AmazonImportSummary
 import com.example.bookcatalog.data.io.DuplicateHandling
 import com.example.bookcatalog.data.io.ImportOptions
 import com.example.bookcatalog.data.io.ImportSummary
+import com.example.bookcatalog.data.io.IsbnImportSummary
+import com.example.bookcatalog.data.io.IsbnList
 import java.time.LocalDate
 
 @Composable
@@ -56,6 +60,8 @@ fun ImportExportScreen(
     val state by viewModel.state.collectAsState()
     var duplicates by rememberSaveable { mutableStateOf(DuplicateHandling.SKIP) }
     var fetchMissingCovers by rememberSaveable { mutableStateOf(false) }
+    var isbnText by rememberSaveable { mutableStateOf("") }
+    val isbnList = remember(isbnText) { IsbnList.parse(isbnText) }
     val exportZip = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/zip"),
     ) { uri -> uri?.let { viewModel.export(it, zip = true) } }
@@ -210,6 +216,42 @@ fun ImportExportScreen(
                 modifier = Modifier.fillMaxWidth(),
             ) { Text("Choose Amazon book list") }
 
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+            Text("Import a list of ISBNs", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "Paste ISBNs one per line or separated by commas. Each is looked up and filled in just as " +
+                    "if you had entered it, then added. ISBNs already in your library are skipped.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            OutlinedTextField(
+                value = isbnText,
+                onValueChange = { isbnText = it },
+                enabled = !state.busy,
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("ISBNs") },
+                minLines = 4,
+                maxLines = 10,
+                isError = isbnList.invalid.isNotEmpty(),
+                supportingText = {
+                    val count = isbnList.isbns.size
+                    Text(
+                        when {
+                            isbnText.isBlank() -> "Hyphens and spaces are accepted."
+                            isbnList.invalid.isEmpty() -> "$count ISBN${if (count == 1) "" else "s"}"
+                            else -> "$count ISBN${if (count == 1) "" else "s"}; not valid, and will be left out: " +
+                                isbnList.invalid.joinToString(", ")
+                        },
+                    )
+                },
+            )
+            OutlinedButton(
+                onClick = { viewModel.importIsbns(isbnText) },
+                enabled = !state.busy && isbnList.isbns.isNotEmpty(),
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Look up and add books") }
+
             if (state.busy) {
                 val progress = state.progress
                 if (progress == null || progress.total == 0) {
@@ -226,6 +268,7 @@ fun ImportExportScreen(
             state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             state.importSummary?.let { ImportSummaryCard(it) }
             state.amazonSummary?.let { AmazonSummaryCard(it) }
+            state.isbnSummary?.let { IsbnSummaryCard(it) }
         }
     }
 }
@@ -299,6 +342,45 @@ private fun AmazonSummaryCard(summary: AmazonImportSummary) {
                     (if (summary.stoppedEarly) "Stopped after several lookups in a row failed. " else "") +
                         "${summary.remaining} books still need looking up. Check the connection and " +
                         "choose the same file again to finish them.",
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun IsbnSummaryCard(summary: IsbnImportSummary) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(
+                if (summary.failed.isNotEmpty()) "Import paused" else "Import finished",
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Text("Added: ${summary.added}")
+            Text("Already in your library: ${summary.alreadyInLibrary}")
+            if (summary.withWarnings > 0) {
+                Text(
+                    "${summary.withWarnings} added without a cover, BISAC subjects or description; " +
+                        "open them to fill those in.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            if (summary.notFound.isNotEmpty()) {
+                Text("No details found, so not added: ${summary.notFound.joinToString(", ")}")
+            }
+            if (summary.invalid.isNotEmpty()) {
+                Text("Not valid ISBNs: ${summary.invalid.joinToString(", ")}")
+            }
+            if (summary.failed.isNotEmpty()) {
+                Text(
+                    (if (summary.stoppedEarly) "Stopped after several lookups in a row failed. " else "") +
+                        "Couldn't reach the lookup services for ${summary.failed.joinToString(", ")}. " +
+                        "Check the connection and import the list again to finish them.",
                     color = MaterialTheme.colorScheme.error,
                 )
             }

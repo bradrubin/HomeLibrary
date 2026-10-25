@@ -12,6 +12,8 @@ import android.net.Uri
 import com.example.bookcatalog.data.io.AmazonImportSummary
 import com.example.bookcatalog.data.io.AmazonImporter
 import com.example.bookcatalog.data.io.ImportOptions
+import com.example.bookcatalog.data.io.IsbnImportSummary
+import com.example.bookcatalog.data.io.IsbnListImporter
 import com.example.bookcatalog.data.io.ImportSummary
 import com.example.bookcatalog.data.io.LibraryExporter
 import com.example.bookcatalog.data.io.LibraryImporter
@@ -188,6 +190,7 @@ data class ImportExportUiState(
     val exportMessage: String? = null,
     val importSummary: ImportSummary? = null,
     val amazonSummary: AmazonImportSummary? = null,
+    val isbnSummary: IsbnImportSummary? = null,
     val error: String? = null,
 )
 
@@ -196,6 +199,7 @@ class ImportExportViewModel(
     private val exporter: LibraryExporter,
     private val importer: LibraryImporter,
     private val amazonImporter: AmazonImporter,
+    private val isbnListImporter: IsbnListImporter,
     private val contentResolver: ContentResolver,
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(ImportExportUiState())
@@ -226,6 +230,11 @@ class ImportExportViewModel(
             input.use { amazonImporter.import(it, ::report) }
         }
         mutableState.update { it.copy(amazonSummary = summary) }
+    }
+
+    fun importIsbns(text: String) = run("import") {
+        val summary = isbnListImporter.import(text, ::report)
+        mutableState.update { it.copy(isbnSummary = summary) }
     }
 
     private fun report(progress: TransferProgress) {

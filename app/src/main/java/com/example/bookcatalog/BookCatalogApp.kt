@@ -8,6 +8,7 @@ import com.example.bookcatalog.data.covers.CoverStore
 import com.example.bookcatalog.data.BookRepository
 import com.example.bookcatalog.data.db.AppDatabase
 import com.example.bookcatalog.data.io.AmazonImporter
+import com.example.bookcatalog.data.io.IsbnListImporter
 import com.example.bookcatalog.data.io.LibraryExporter
 import com.example.bookcatalog.data.io.LibraryImporter
 import com.example.bookcatalog.data.metadata.AmazonLookup
@@ -125,6 +126,7 @@ class AppContainer(application: Application) {
             metadataRepository,
         ),
     )
+    val isbnListImporter = IsbnListImporter(bookRepository, metadataRepository::lookup)
 
     init {
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {

@@ -46,4 +46,6 @@ data class MetadataLookupResult(
     val book: Book,
     val message: String? = null,
     val warning: String? = null,
+    /** True when no lookup service could be reached, so trying again later may find the book. */
+    val sourcesFailed: Boolean = false,
 )

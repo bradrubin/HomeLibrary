@@ -132,6 +132,7 @@ class BookMetadataRepository(
                     "No book details were found for ISBN $isbn13. If that isn't the ISBN printed on " +
                         "the book, scan again or enter it manually; otherwise you can enter the details yourself."
                 },
+                sourcesFailed = details.allSourcesFailed,
             )
         val coverDownloadFailed = details.coverDownloadFailed
         var subjectMappingFailed = false

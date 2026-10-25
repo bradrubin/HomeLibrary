@@ -85,6 +85,7 @@ private fun BookCatalogNavigation(container: AppContainer) {
                                 container.libraryExporter,
                                 container.libraryImporter,
                                 container.amazonImporter,
+                                container.isbnListImporter,
                                 container.contentResolver,
                             )
                         }
