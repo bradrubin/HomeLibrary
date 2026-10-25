@@ -26,6 +26,8 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenuItem
@@ -565,7 +567,6 @@ fun BookEditScreen(
                 Button(
                     onClick = {
                         val pages = draft.pageCount.toIntOrNull()
-                        val rating = draft.rating.toIntOrNull()
                         formError = when {
                             draft.title.isBlank() -> "Enter a title."
                             draft.publishedDate.isNotBlank() && !PublicationYear.isValid(draft.publishedDate.trim()) ->
@@ -574,8 +575,6 @@ fun BookEditScreen(
                                 "Page count must be a whole number."
                             draft.hasAudioLength && draft.audioLength() == null ->
                                 "Audio length must be whole hours and minutes."
-                            draft.rating.isNotBlank() && (rating == null || rating !in 0..5) ->
-                                "Rating must be between 0 and 5."
                             else -> null
                         }
                         if (formError == null) {
@@ -779,11 +778,9 @@ fun BookEditScreen(
                     singleLine = false,
                     capitalization = KeyboardCapitalization.Sentences,
                 )
-                BookTextField(
-                    "Rating (0–5)",
-                    draft.rating,
-                    { draft = draft.copy(rating = it) },
-                    keyboardType = KeyboardType.Number,
+                StarRatingField(
+                    rating = draft.rating.toIntOrNull() ?: 0,
+                    onRatingChange = { draft = draft.copy(rating = if (it == 0) "" else it.toString()) },
                 )
                 ChoiceField(
                     label = "Read status",
@@ -908,6 +905,30 @@ private fun ChoiceField(
                         onValueChange(choice)
                         expanded = false
                     },
+                )
+            }
+        }
+    }
+}
+
+/** Five tappable stars; tapping the highest lit star clears the rating. */
+@Composable
+private fun StarRatingField(rating: Int, onRatingChange: (Int) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            "Rating",
+            style = MaterialTheme.typography.bodyLarge,
+            modifier = Modifier.padding(end = 8.dp),
+        )
+        (1..5).forEach { star ->
+            IconButton(onClick = { onRatingChange(if (star == rating) 0 else star) }) {
+                Icon(
+                    imageVector = if (star <= rating) Icons.Filled.Star else Icons.Filled.StarBorder,
+                    contentDescription = if (star == 1) "1 star" else "$star stars",
+                    tint = if (star <= rating) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
