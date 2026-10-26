@@ -161,6 +161,11 @@ private fun BookCatalogNavigation(container: AppContainer) {
                         launchSingleTop = true
                     }
                 },
+                onDuplicated = { copyId ->
+                    // The copy replaces this screen, so going back returns to the library.
+                    navController.popBackStack()
+                    navController.navigate("edit/$copyId")
+                },
             )
         }
     }

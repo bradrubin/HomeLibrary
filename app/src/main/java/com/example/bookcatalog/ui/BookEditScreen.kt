@@ -25,6 +25,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
@@ -201,6 +202,7 @@ fun BookEditScreen(
     coverStore: CoverStore,
     onDone: () -> Unit,
     onSaved: () -> Unit = onDone,
+    onDuplicated: (Long) -> Unit = {},
 ) {
     var draft by rememberSaveable(bookId) {
         mutableStateOf(initialBook?.let(BookDraft::from) ?: BookDraft())
@@ -542,7 +544,14 @@ fun BookEditScreen(
                     }
                 },
                 actions = {
-                    originalBook?.takeIf { it.id != 0L }?.let {
+                    originalBook?.takeIf { it.id != 0L }?.let { book ->
+                        // The saved book is copied, so unsaved edits must be saved or cancelled first.
+                        IconButton(
+                            onClick = { scope.launch { onDuplicated(viewModel.duplicate(book)) } },
+                            enabled = !hasChanges && isbnLookupStep == null,
+                        ) {
+                            Icon(Icons.Default.ContentCopy, contentDescription = "Duplicate book")
+                        }
                         IconButton(onClick = { showDeleteConfirmation = true }) {
                             Icon(Icons.Default.Delete, contentDescription = "Delete book")
                         }

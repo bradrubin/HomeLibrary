@@ -8,6 +8,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.UUID
 
 class BookRepository(
     private val database: AppDatabase,
@@ -36,6 +37,32 @@ class BookRepository(
         bookDao.update(book)
         replacedCover?.let { deleteCoverIfUnused(it) }
         return book.id
+    }
+
+    /**
+     * Adds a copy of the book, such as an eBook of a print edition already owned, with its own
+     * copy of the cover so either can be changed alone. Returns the copy's ID.
+     */
+    suspend fun duplicate(book: Book): Long {
+        val coverCopy = book.coverFile?.let { coverFile ->
+            withContext(Dispatchers.IO) {
+                val source = File(coverDirectory, coverFile)
+                if (!source.isFile) return@withContext null
+                val target = File(coverDirectory, "copy-${UUID.randomUUID()}.${source.extension}")
+                source.copyTo(target)
+                target.name
+            }
+        }
+        val now = System.currentTimeMillis()
+        return bookDao.insert(
+            book.copy(
+                id = 0L,
+                coverFile = coverCopy,
+                coverSourceUrl = book.coverSourceUrl.takeIf { coverCopy != null },
+                dateAdded = now,
+                dateModified = now,
+            ),
+        )
     }
 
     suspend fun delete(book: Book) = delete(listOf(book))

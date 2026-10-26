@@ -7,7 +7,9 @@ import com.example.bookcatalog.data.db.AppDatabase
 import com.example.bookcatalog.data.db.Book
 import kotlinx.coroutines.runBlocking
 import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -52,6 +54,25 @@ class BookRepositoryTest {
 
         assertFalse(old.exists())
         assertTrue(new.exists())
+    }
+
+    @Test
+    fun duplicatingCopiesTheBookAndItsCover() = runBlocking {
+        val cover = cover("original.jpg")
+        val id = repository.save(Book(title = "Dune", format = "Hardcover", rating = 5, coverFile = cover.name))
+        val original = requireNotNull(repository.getBook(id))
+
+        val copy = requireNotNull(repository.getBook(repository.duplicate(original)))
+
+        assertNotEquals(original.id, copy.id)
+        assertEquals(original.copy(id = copy.id, coverFile = copy.coverFile, dateAdded = copy.dateAdded, dateModified = copy.dateModified), copy)
+        val copiedCover = File(covers, requireNotNull(copy.coverFile))
+        assertNotEquals(cover.name, copiedCover.name)
+        assertTrue(copiedCover.readBytes().contentEquals(cover.readBytes()))
+
+        repository.delete(original)
+        assertFalse(cover.exists())
+        assertTrue(copiedCover.exists())
     }
 
     @Test

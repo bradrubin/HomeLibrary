@@ -163,6 +163,8 @@ class BookEditViewModel(
     suspend fun writeDescription(book: Book): String? =
         metadataRepository.writeDescription(book)
 
+    suspend fun duplicate(book: Book): Long = repository.duplicate(book)
+
     suspend fun delete(book: Book) {
         repository.delete(book)
     }
