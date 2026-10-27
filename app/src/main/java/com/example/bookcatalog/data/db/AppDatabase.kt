@@ -5,10 +5,11 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.example.bookcatalog.domain.AuthorNames
+import com.example.bookcatalog.domain.IsbnUtils
 
 @Database(
     entities = [Book::class],
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -44,6 +45,23 @@ abstract class AppDatabase : RoomDatabase() {
         val MIGRATION_3_4 = object : Migration(3, 4) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE books ADD COLUMN audioMinutes INTEGER")
+            }
+        }
+
+        /** Fills in the ISBN-10 of books with a 978 ISBN-13 that were saved without one. */
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                val changes = mutableListOf<Pair<Long, String>>()
+                db.query(
+                    "SELECT id, isbn13 FROM books WHERE isbn13 IS NOT NULL AND (isbn10 IS NULL OR isbn10 = '')",
+                ).use { cursor ->
+                    while (cursor.moveToNext()) {
+                        IsbnUtils.isbn13To10(cursor.getString(1))?.let { changes += cursor.getLong(0) to it }
+                    }
+                }
+                for ((id, isbn10) in changes) {
+                    db.execSQL("UPDATE books SET isbn10 = ? WHERE id = ?", arrayOf(isbn10, id))
+                }
             }
         }
     }

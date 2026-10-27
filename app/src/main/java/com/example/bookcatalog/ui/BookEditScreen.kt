@@ -119,7 +119,7 @@ private data class BookDraft(
     fun toBook(existingBook: Book?): Book = Book(
         id = existingBook?.id ?: 0L,
         isbn13 = isbn13.normalizedIsbn().takeIf(String::isNotBlank),
-        isbn10 = isbn10.normalizedIsbn().takeIf(String::isNotBlank),
+        isbn10 = isbn10.normalizedIsbn().takeIf(String::isNotBlank) ?: IsbnUtils.isbn13To10(isbn13),
         asin = asin.normalizedIsbn().takeIf(String::isNotBlank),
         title = TitleCase.format(title.trim(), keepUppercaseWords = true),
         subtitle = subtitle.optional()?.let { TitleCase.format(it, keepUppercaseWords = true) },
@@ -219,6 +219,7 @@ fun BookEditScreen(
     var isbnStatus by rememberSaveable(bookId) { mutableStateOf<ModelStatus?>(null) }
     // The ISBN the details were last filled in from, so only a new ISBN starts a lookup.
     var lookedUpIsbn by rememberSaveable(bookId) { mutableStateOf<String?>(null) }
+    var autoFilledIsbn10 by rememberSaveable(bookId) { mutableStateOf<String?>(null) }
     var isbnLookup by remember { mutableStateOf<Job?>(null) }
     // What a running ISBN lookup is doing; the form is covered and can't be saved until it ends.
     var isbnLookupStep by remember { mutableStateOf<String?>(null) }
@@ -662,7 +663,13 @@ fun BookEditScreen(
                     "ISBN-13",
                     draft.isbn13,
                     {
-                        draft = draft.copy(isbn13 = it)
+                        // Keep the ISBN-10 in step with the ISBN-13 while it is blank or was filled in from it.
+                        val isbn10 = if (draft.isbn10.isBlank() || draft.isbn10 == autoFilledIsbn10) {
+                            IsbnUtils.isbn13To10(it).also { derived -> autoFilledIsbn10 = derived }.orEmpty()
+                        } else {
+                            draft.isbn10
+                        }
+                        draft = draft.copy(isbn13 = it, isbn10 = isbn10)
                         onIsbnEdited(it, length = 13)
                     },
                     keyboardType = KeyboardType.Number,
