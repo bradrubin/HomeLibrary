@@ -36,6 +36,17 @@ class LibraryQueryTest {
     }
 
     @Test
+    fun sortsTitlesIgnoringALeadingAn() {
+        val titles = listOf("Anarchy", "An American Marriage", "Any Human Heart", "An Odyssey", "The Italian", "An Italian Education")
+        val books = titles.mapIndexed { index, title -> Book(id = index + 10L, title = title) }
+
+        assertEquals(
+            listOf("An American Marriage", "Anarchy", "Any Human Heart", "The Italian", "An Italian Education", "An Odyssey"),
+            LibraryQuery.sort(books, SortOrder.TITLE).map(Book::title),
+        )
+    }
+
+    @Test
     fun putsBooksMissingTheSortedFieldLast() {
         assertEquals(listOf(dune, odyssey, amelie), LibraryQuery.sort(listOf(amelie, odyssey, dune), SortOrder.AUTHOR))
         assertEquals(
