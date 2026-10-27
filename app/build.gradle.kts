@@ -103,6 +103,20 @@ tasks.named("preBuild").configure {
     dependsOn(generateNetworkSecurityConfig)
 }
 
+// Connected tests and uninstall tasks remove the app from the attached phone,
+// which deletes the real library. Require -PallowDeviceTests to run them.
+val allowDeviceTests = providers.gradleProperty("allowDeviceTests").isPresent
+tasks.matching { it.name.startsWith("connected") || it.name.startsWith("uninstall") }.configureEach {
+    doFirst {
+        if (!allowDeviceTests) {
+            throw GradleException(
+                "$name would uninstall the app and wipe the library on the attached device. " +
+                    "Re-run with -PallowDeviceTests if you really mean it.",
+            )
+        }
+    }
+}
+
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
