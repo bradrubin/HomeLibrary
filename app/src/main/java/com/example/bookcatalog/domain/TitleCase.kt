@@ -12,7 +12,12 @@ object TitleCase {
     )
     private val words = Regex("[\\p{L}\\p{N}]+(?:['’][\\p{L}\\p{N}]+)*")
 
-    fun format(value: String): String {
+    /**
+     * Title-cases [value]. When [keepUppercaseWords] is true, words of two or more capital
+     * letters (SPQR, III) are kept as written. By default that only happens when the text has
+     * lowercase letters elsewhere, so an entirely all-caps title is still title-cased.
+     */
+    fun format(value: String, keepUppercaseWords: Boolean = value.any(Char::isLowerCase)): String {
         val matches = words.findAll(value).toList()
         if (matches.isEmpty()) return value
 
@@ -25,15 +30,16 @@ object TitleCase {
                 val isBoundary = index == 0 || index == matches.lastIndex ||
                     previousSeparator.contains(':') ||
                     (previousSeparator.contains('-') && word.lowercase(Locale.ROOT) !in smallWords)
-                append(formatWord(word, isBoundary || word.lowercase(Locale.ROOT) !in smallWords))
+                append(formatWord(word, isBoundary || word.lowercase(Locale.ROOT) !in smallWords, keepUppercaseWords))
                 cursor = match.range.last + 1
             }
             append(value, cursor, value.length)
         }
     }
 
-    private fun formatWord(word: String, capitalize: Boolean): String {
+    private fun formatWord(word: String, capitalize: Boolean, keepUppercase: Boolean): String {
         if (word in acronyms) return word
+        if (keepUppercase && word.count(Char::isLetter) >= 2 && word.none(Char::isLowerCase)) return word
         if (word.any(Char::isLowerCase) && word.any(Char::isUpperCase)) return word
         val lowercase = word.lowercase(Locale.ROOT)
         if (!capitalize) return lowercase

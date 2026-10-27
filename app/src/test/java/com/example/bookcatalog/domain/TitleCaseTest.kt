@@ -27,4 +27,19 @@ class TitleCaseTest {
             TitleCase.format("THE GREAT GATSBY"),
         )
     }
+
+    @Test
+    fun keepsAllCapsWordsInOtherwiseMixedCaseText() {
+        assertEquals(
+            "SPQR: A History of Ancient Rome",
+            TitleCase.format("SPQR: a history of ancient rome"),
+        )
+        assertEquals("Rocky III", TitleCase.format("rocky III"))
+    }
+
+    @Test
+    fun keepsAllCapsWordsWhenAskedEvenIfWholeTitleIsCapitalized() {
+        assertEquals("SPQR", TitleCase.format("SPQR", keepUppercaseWords = true))
+        assertEquals("The I of the Storm", TitleCase.format("the I of the storm", keepUppercaseWords = true))
+    }
 }
