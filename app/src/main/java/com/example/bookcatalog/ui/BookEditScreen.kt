@@ -392,14 +392,7 @@ fun BookEditScreen(
                 val details = viewModel.fetchDetails(isbn13)
                 val found = details.book
                 if (found == null) {
-                    isbnStatus = ModelStatus(
-                        if (details.allSourcesFailed) {
-                            "Couldn’t connect to the book lookup services. Check your internet connection and try again."
-                        } else {
-                            "No book details were found for ISBN $isbn13."
-                        },
-                        isError = true,
-                    )
+                    isbnStatus = ModelStatus(details.notFoundMessage(isbn13), isError = true)
                     return@launch
                 }
                 val current = draft
@@ -416,6 +409,7 @@ fun BookEditScreen(
                     dataSource = listOfNotNull(AmazonImporter.SOURCE, found.dataSource).joinToString("+"),
                 )
                 val problems = mutableListOf<String>()
+                details.partialWarning?.let { problems += it }
                 if (found.coverFile == null) {
                     problems += if (details.coverDownloadFailed) {
                         "Its cover couldn't be downloaded."

@@ -379,8 +379,8 @@ private fun IsbnSummaryCard(summary: IsbnImportSummary) {
             if (summary.failed.isNotEmpty()) {
                 Text(
                     (if (summary.stoppedEarly) "Stopped after several lookups in a row failed. " else "") +
-                        "Couldn't reach the lookup services for ${summary.failed.joinToString(", ")}. " +
-                        "Check the connection and import the list again to finish them.",
+                        "The lookup services didn't all answer for ${summary.failed.joinToString(", ")}. " +
+                        "Check the connection or wait a few minutes, then import the list again to finish them.",
                     color = MaterialTheme.colorScheme.error,
                 )
             }

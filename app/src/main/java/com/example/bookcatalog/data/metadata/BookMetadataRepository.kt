@@ -17,9 +17,17 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import retrofit2.HttpException
 import java.io.IOException
+import java.io.InterruptedIOException
 
 /** A HomeChat request that failed in an expected way, with a [message] to show the user. */
 class ModelException(message: String, cause: Throwable? = null) : Exception(message, cause)
+
+/** Why a source gave no answer, as opposed to answering that it doesn't know the ISBN. */
+enum class SourceFailure(val description: String) {
+    TIMED_OUT("didn't respond in time"),
+    UNREACHABLE("couldn't be reached"),
+    ERROR("returned an error"),
+}
 
 data class FetchedDetails(
     val book: Book?,
@@ -28,7 +36,34 @@ data class FetchedDetails(
     val coverDownloadFailed: Boolean = false,
     /** The Library of Congress record carried publisher-supplied BISAC headings. */
     val hasPublisherBisac: Boolean = false,
-)
+    /** The sources that gave no answer, by display name; they may know a book the others didn't. */
+    val sourceFailures: Map<String, SourceFailure> = emptyMap(),
+) {
+    /** For example "Open Library didn't respond in time and Google Books couldn't be reached". */
+    private val failureSummary: String
+        get() {
+            val parts = sourceFailures.map { (name, failure) -> "$name ${failure.description}" }
+            return if (parts.size <= 1) parts.joinToString() else "${parts.dropLast(1).joinToString(", ")} and ${parts.last()}"
+        }
+
+    /** Why no book was found, telling a service that didn't answer from one that doesn't know the ISBN. */
+    fun notFoundMessage(isbn13: String): String = when {
+        allSourcesFailed && sourceFailures.values.all { it == SourceFailure.UNREACHABLE } ->
+            "Couldn’t connect to the book lookup services. Check your internet connection and try again."
+        allSourcesFailed -> "Couldn’t look up ISBN $isbn13: $failureSummary. Try again in a few minutes."
+        sourceFailures.isNotEmpty() ->
+            "No book details were found for ISBN $isbn13, but $failureSummary, so try again in a few minutes."
+        else -> "No book details were found for ISBN $isbn13."
+    }
+
+    /** Set when a book was found without every source's details. */
+    val partialWarning: String?
+        get() = if (book == null || sourceFailures.isEmpty()) {
+            null
+        } else {
+            "${failureSummary.replaceFirstChar(Char::uppercase)}, so some details may be missing."
+        }
+}
 
 class BookMetadataRepository(
     private val sources: List<BookMetadataSource>,
@@ -79,14 +114,19 @@ class BookMetadataRepository(
         val openResult = results["OpenLibrary"]
         val googleResult = results["Google"]
         val locResult = results["LibraryOfCongress"]
-        val book = MetadataMerger.merge(
+        val merged = MetadataMerger.merge(
             isbn13 = isbn13,
             openLibrary = openResult?.metadata,
             googleBooks = googleResult?.metadata,
             libraryOfCongress = locResult?.metadata,
-        ) ?: return@supervisorScope FetchedDetails(
+        )
+        val sourceFailures = sources.mapNotNull { source ->
+            results[source.name]?.failure?.let { displayName(source.name) to it }
+        }.toMap()
+        val book = merged ?: return@supervisorScope FetchedDetails(
             book = null,
-            allSourcesFailed = results.values.all(SourceResult::failed),
+            allSourcesFailed = results.values.all { it.failure != null },
+            sourceFailures = sourceFailures,
         ).also { Log.i(TAG, "No source had usable details for $isbn13 (all failed: ${it.allSourcesFailed})") }
         Log.i(TAG, "Merged details for $isbn13 from ${book.dataSource}: \"${book.title}\"")
 
@@ -117,6 +157,7 @@ class BookMetadataRepository(
             // Only worth mentioning when an error, not just a placeholder image, left the book without one.
             coverDownloadFailed = coverDownloadErrored && withCover.coverFile == null,
             hasPublisherBisac = usedLibraryOfCongress && locResult?.metadata?.bisacSubjects.orEmpty().isNotEmpty(),
+            sourceFailures = sourceFailures,
         )
     }
 
@@ -125,14 +166,15 @@ class BookMetadataRepository(
         var mappedBook = details.book
             ?: return MetadataLookupResult(
                 book = emptyLookupBook(isbn13),
-                message = if (details.allSourcesFailed) {
-                    "Couldn’t connect to the book lookup services. Check your internet connection and try again."
+                message = if (details.sourceFailures.isNotEmpty()) {
+                    details.notFoundMessage(isbn13)
                 } else {
                     // A misread barcode can still pass the check digit, so the ISBN itself may be wrong.
                     "No book details were found for ISBN $isbn13. If that isn't the ISBN printed on " +
                         "the book, scan again or enter it manually; otherwise you can enter the details yourself."
                 },
-                sourcesFailed = details.allSourcesFailed,
+                // A source that didn't answer may know the book, so it's worth trying again.
+                sourcesFailed = details.sourceFailures.isNotEmpty(),
             )
         val coverDownloadFailed = details.coverDownloadFailed
         var subjectMappingFailed = false
@@ -168,6 +210,7 @@ class BookMetadataRepository(
         return MetadataLookupResult(
             book = mappedBook,
             warning = listOfNotNull(
+                details.partialWarning,
                 "Book details were found, but its cover could not be downloaded."
                     .takeIf { coverDownloadFailed },
                 "No cover was found for this ISBN."
@@ -188,10 +231,10 @@ class BookMetadataRepository(
         val startedAt = System.nanoTime()
         fun elapsedMs() = (System.nanoTime() - startedAt) / 1_000_000
         return try {
-            val result = withTimeoutOrNull(SOURCE_TIMEOUT_MS) { SourceResult(source.fetch(isbn13), failed = false) }
+            val result = withTimeoutOrNull(SOURCE_TIMEOUT_MS) { SourceResult(source.fetch(isbn13)) }
             if (result == null) {
                 Log.w(TAG, "${source.name} lookup timed out for $isbn13 after ${elapsedMs()} ms")
-                SourceResult(null, failed = true)
+                SourceResult(null, SourceFailure.TIMED_OUT)
             } else {
                 // Logged either way, so a lookup that found nothing shows which sources answered.
                 val outcome = result.metadata?.let { "found \"${it.title}\"" } ?: "had no record"
@@ -203,7 +246,13 @@ class BookMetadataRepository(
             throw exception
         } catch (exception: Exception) {
             Log.w(TAG, "${source.name} lookup failed for $isbn13 after ${elapsedMs()} ms", exception)
-            SourceResult(null, failed = true)
+            val failure = when (exception) {
+                // OkHttp's own timeouts, including SocketTimeoutException.
+                is InterruptedIOException -> SourceFailure.TIMED_OUT
+                is IOException -> SourceFailure.UNREACHABLE
+                else -> SourceFailure.ERROR
+            }
+            SourceResult(null, failure)
         }
     }
 
@@ -222,9 +271,16 @@ class BookMetadataRepository(
     val canMapSubjects: Boolean get() = subjectMapper != null
     val canWriteDescriptions: Boolean get() = descriptionWriter != null
 
+    private fun displayName(sourceName: String): String = when (sourceName) {
+        "OpenLibrary" -> "Open Library"
+        "Google" -> "Google Books"
+        "LibraryOfCongress" -> "the Library of Congress"
+        else -> sourceName
+    }
+
     private data class SourceResult(
         val metadata: BookMetadata?,
-        val failed: Boolean,
+        val failure: SourceFailure? = null,
     )
 
     companion object {
