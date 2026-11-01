@@ -97,7 +97,7 @@ private fun BookCatalogNavigation(container: AppContainer) {
         composable("lookup") {
             val viewModel: IsbnLookupViewModel = viewModel(
                 factory = viewModelFactory {
-                    initializer { IsbnLookupViewModel(metadataRepository, container.asinLookup) }
+                    initializer { IsbnLookupViewModel(repository, metadataRepository, container.asinLookup) }
                 },
             )
             IsbnLookupScreen(
@@ -105,6 +105,11 @@ private fun BookCatalogNavigation(container: AppContainer) {
                 onLookupComplete = { result ->
                     pendingLookup = result
                     navController.navigate("edit/new")
+                },
+                onOpenExisting = { id ->
+                    navController.navigate("edit/$id") {
+                        popUpTo("lookup") { inclusive = true }
+                    }
                 },
                 onCancel = { navController.popBackStack() },
             )

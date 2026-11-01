@@ -1,7 +1,10 @@
 package com.example.bookcatalog.ui
 
+import android.database.sqlite.SQLiteException
+import android.util.Log
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -9,6 +12,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -18,6 +22,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -33,6 +38,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.example.bookcatalog.data.db.Book
 import com.example.bookcatalog.data.metadata.MetadataLookupResult
 import com.example.bookcatalog.domain.IsbnUtils
 import kotlinx.coroutines.launch
@@ -42,6 +48,7 @@ import kotlinx.coroutines.launch
 fun IsbnLookupScreen(
     viewModel: IsbnLookupViewModel,
     onLookupComplete: (MetadataLookupResult) -> Unit,
+    onOpenExisting: (Long) -> Unit,
     onCancel: () -> Unit,
 ) {
     var input by rememberSaveable { mutableStateOf("") }
@@ -50,14 +57,26 @@ fun IsbnLookupScreen(
     val keyboardController = LocalSoftwareKeyboardController.current
     val isbn13 = remember(input) { IsbnUtils.toIsbn13(input) }
     val asin = remember(input) { IsbnUtils.toAsin(input) }
+    var duplicateBook by remember { mutableStateOf<Book?>(null) }
+    var libraryError by remember { mutableStateOf<String?>(null) }
 
-    fun startLookup() {
+    /** Looks the book up, first offering a book already in the library with this ASIN unless [addCopy] is set. */
+    fun startLookup(addCopy: Boolean = false) {
         if (isbn13 == null && asin == null) return
         keyboardController?.hide()
         scope.launch {
             isLookingUp = true
+            libraryError = null
             try {
-                onLookupComplete(if (isbn13 != null) viewModel.lookup(isbn13) else viewModel.lookupAsin(requireNotNull(asin)))
+                val existingBook = if (addCopy || asin == null) null else viewModel.findExistingBook(asin)
+                if (existingBook != null) {
+                    duplicateBook = existingBook
+                } else {
+                    onLookupComplete(if (isbn13 != null) viewModel.lookup(isbn13) else viewModel.lookupAsin(requireNotNull(asin)))
+                }
+            } catch (exception: SQLiteException) {
+                Log.e(TAG, "Could not check the library for ASIN $asin", exception)
+                libraryError = "Could not access your library. Please try again."
             } finally {
                 isLookingUp = false
             }
@@ -141,6 +160,9 @@ fun IsbnLookupScreen(
                     Text("Look up book")
                 }
             }
+            libraryError?.let {
+                Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+            }
             Text(
                 "You can also add the book manually if it has neither.",
                 style = MaterialTheme.typography.bodySmall,
@@ -148,4 +170,44 @@ fun IsbnLookupScreen(
             )
         }
     }
+
+    duplicateBook?.let { existingBook ->
+        AlertDialog(
+            onDismissRequest = { duplicateBook = null },
+            title = { Text("Already in your library") },
+            text = {
+                Text(
+                    "“${existingBook.title}” is already in your library with this ASIN. " +
+                        "Open it or add another copy?",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        duplicateBook = null
+                        onOpenExisting(existingBook.id)
+                    },
+                ) {
+                    Text("Open book")
+                }
+            },
+            dismissButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = { duplicateBook = null }) {
+                        Text("Cancel")
+                    }
+                    TextButton(
+                        onClick = {
+                            duplicateBook = null
+                            startLookup(addCopy = true)
+                        },
+                    ) {
+                        Text("Add another copy")
+                    }
+                }
+            },
+        )
+    }
 }
+
+private const val TAG = "IsbnLookupScreen"

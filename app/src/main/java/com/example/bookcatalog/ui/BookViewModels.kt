@@ -172,9 +172,13 @@ class BookEditViewModel(
 }
 
 class IsbnLookupViewModel(
+    private val repository: BookRepository,
     private val metadataRepository: BookMetadataRepository,
     private val asinLookup: AsinLookup,
 ) : ViewModel() {
+    suspend fun findExistingBook(asin: String): Book? =
+        repository.findByAsin(asin)
+
     suspend fun lookup(isbn13: String): MetadataLookupResult =
         metadataRepository.lookup(isbn13)
 

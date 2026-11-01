@@ -22,6 +22,8 @@ class BookRepository(
 
     suspend fun findByIsbn13(isbn13: String): Book? = bookDao.getByIsbn13(isbn13)
 
+    suspend fun findByAsin(asin: String): Book? = bookDao.getByAsin(asin)
+
     override suspend fun allBooks(): List<Book> = bookDao.getAll()
 
     override suspend fun insert(book: Book): Long = bookDao.insert(book)
