@@ -58,6 +58,9 @@ BRAVE_SEARCH_API_KEY=your-brave-search-key
 The key is built into the app, and searches go from the phone straight to
 Brave. Without a key, the model writes only from its own knowledge. Existing books can be updated from the edit screen with
 **Summarize description** (or **Write description** when it is empty).
+**Enter ISBN or ASIN** also accepts an ASIN starting with B, such as a Kindle or
+Audible book's. It sends the ASIN to Brave and the results to HomeChat to identify
+the book, so it needs both configured, then looks for a matching print edition.
 When taking a cover photo, the app detects a likely book-cover rectangle on-device.
 The crop remains adjustable, and low-confidence detection falls back to the manual frame.
 

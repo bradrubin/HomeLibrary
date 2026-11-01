@@ -526,7 +526,7 @@ private fun AddBookButton(onScanBook: () -> Unit, onAddBook: () -> Unit, onLooku
             listOf(
                 "Scan barcode" to onScanBook,
                 "Add manually" to onAddBook,
-                "Enter ISBN" to onLookupBook,
+                "Enter ISBN or ASIN" to onLookupBook,
             ).forEach { (label, action) ->
                 DropdownMenuItem(
                     text = { Text(label) },

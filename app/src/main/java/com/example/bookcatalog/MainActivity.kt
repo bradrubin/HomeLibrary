@@ -97,7 +97,7 @@ private fun BookCatalogNavigation(container: AppContainer) {
         composable("lookup") {
             val viewModel: IsbnLookupViewModel = viewModel(
                 factory = viewModelFactory {
-                    initializer { IsbnLookupViewModel(metadataRepository) }
+                    initializer { IsbnLookupViewModel(metadataRepository, container.asinLookup) }
                 },
             )
             IsbnLookupScreen(

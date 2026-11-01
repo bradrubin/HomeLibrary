@@ -25,6 +25,14 @@ class IsbnUtilsTest {
     }
 
     @Test
+    fun recognizesAsins() {
+        assertEquals("B07XB49J92", IsbnUtils.toAsin(" b07x-b49j92 "))
+        assertNull(IsbnUtils.toAsin("0306406152"))
+        assertNull(IsbnUtils.toAsin("B07XB49J9"))
+        assertNull(IsbnUtils.toAsin("B07XB49J9!"))
+    }
+
+    @Test
     fun detectsWhenIsbn10CheckDigitIsX() {
         assertTrue(IsbnUtils.needsIsbn10CheckX("0-8044-2957"))
         assertFalse(IsbnUtils.needsIsbn10CheckX("030640615"))

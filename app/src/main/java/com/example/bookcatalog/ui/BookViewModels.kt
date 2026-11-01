@@ -6,6 +6,7 @@ import com.example.bookcatalog.data.BookRepository
 import com.example.bookcatalog.data.db.Book
 import com.example.bookcatalog.data.metadata.BookMetadataRepository
 import com.example.bookcatalog.data.metadata.FetchedDetails
+import com.example.bookcatalog.data.metadata.AsinLookup
 import com.example.bookcatalog.data.metadata.MetadataLookupResult
 import android.content.ContentResolver
 import android.net.Uri
@@ -172,9 +173,13 @@ class BookEditViewModel(
 
 class IsbnLookupViewModel(
     private val metadataRepository: BookMetadataRepository,
+    private val asinLookup: AsinLookup,
 ) : ViewModel() {
     suspend fun lookup(isbn13: String): MetadataLookupResult =
         metadataRepository.lookup(isbn13)
+
+    suspend fun lookupAsin(asin: String): MetadataLookupResult =
+        asinLookup.lookup(asin)
 }
 
 class BarcodeScanViewModel(

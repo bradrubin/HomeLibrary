@@ -12,6 +12,7 @@ import com.example.bookcatalog.data.io.IsbnListImporter
 import com.example.bookcatalog.data.io.LibraryExporter
 import com.example.bookcatalog.data.io.LibraryImporter
 import com.example.bookcatalog.data.metadata.AmazonLookup
+import com.example.bookcatalog.data.metadata.AsinLookup
 import com.example.bookcatalog.data.metadata.BookMetadataRepository
 import com.example.bookcatalog.data.metadata.BraveWebSearch
 import com.example.bookcatalog.data.metadata.GoogleBooksMetadataSource
@@ -19,6 +20,7 @@ import com.example.bookcatalog.data.metadata.LibraryOfCongressMetadataSource
 import com.example.bookcatalog.data.metadata.HomeChatApi
 import com.example.bookcatalog.data.metadata.HomeChatBisacSubjectMapper
 import com.example.bookcatalog.data.metadata.HomeChatDescriptionWriter
+import com.example.bookcatalog.data.metadata.HomeChatAsinIdentifier
 import com.example.bookcatalog.data.metadata.IsbnFinder
 import com.example.bookcatalog.data.metadata.OpenLibraryMetadataSource
 import com.example.bookcatalog.data.remote.BraveSearchApi
@@ -119,12 +121,18 @@ class AppContainer(application: Application) {
         stagingDirectory = File(application.cacheDir, "import-covers"),
         fetchCover = { isbn13, url -> withContext(Dispatchers.IO) { coverStore.download(isbn13, url) } },
     )
-    val amazonImporter = AmazonImporter(
-        store = bookRepository,
-        enricher = AmazonLookup(
-            IsbnFinder(openLibraryApi, googleBooksApi, BuildConfig.GOOGLE_BOOKS_API_KEY),
-            metadataRepository,
-        ),
+    private val amazonLookup = AmazonLookup(
+        IsbnFinder(openLibraryApi, googleBooksApi, BuildConfig.GOOGLE_BOOKS_API_KEY),
+        metadataRepository,
+    )
+    val amazonImporter = AmazonImporter(store = bookRepository, enricher = amazonLookup)
+    val asinLookup = AsinLookup(
+        identifier = homeChatApi?.let { api ->
+            webSearch?.let { search ->
+                HomeChatAsinIdentifier(api, BuildConfig.HOMECHAT_LLM_MODEL, BuildConfig.HOMECHAT_LLM_API_KEY, moshi, search)
+            }
+        },
+        enricher = amazonLookup,
     )
     val isbnListImporter = IsbnListImporter(bookRepository, metadataRepository::lookup)
 

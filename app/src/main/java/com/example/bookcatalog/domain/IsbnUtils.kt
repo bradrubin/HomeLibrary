@@ -1,6 +1,8 @@
 package com.example.bookcatalog.domain
 
 object IsbnUtils {
+    private val asinPattern = Regex("B[0-9A-Z]{9}")
+
     fun normalize(input: String): String =
         input.filterNot(Char::isWhitespace).replace("-", "").uppercase()
 
@@ -60,6 +62,13 @@ object IsbnUtils {
             else -> null
         }
     }
+
+    /**
+     * The ASIN in [input], or null if it isn't one. Only the kind Amazon gives Kindle and Audible
+     * books counts, which starts with B; a print book's ASIN is its ISBN-10.
+     */
+    fun toAsin(input: String): String? =
+        normalize(input).takeIf { asinPattern.matches(it) }
 
     /** True when [input] is the first nine digits of an ISBN-10 whose check digit is X. */
     fun needsIsbn10CheckX(input: String): Boolean {

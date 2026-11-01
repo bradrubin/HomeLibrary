@@ -30,6 +30,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.example.bookcatalog.data.metadata.MetadataLookupResult
@@ -48,14 +49,15 @@ fun IsbnLookupScreen(
     val scope = rememberCoroutineScope()
     val keyboardController = LocalSoftwareKeyboardController.current
     val isbn13 = remember(input) { IsbnUtils.toIsbn13(input) }
+    val asin = remember(input) { IsbnUtils.toAsin(input) }
 
     fun startLookup() {
-        val validIsbn13 = isbn13 ?: return
+        if (isbn13 == null && asin == null) return
         keyboardController?.hide()
         scope.launch {
             isLookingUp = true
             try {
-                onLookupComplete(viewModel.lookup(validIsbn13))
+                onLookupComplete(if (isbn13 != null) viewModel.lookup(isbn13) else viewModel.lookupAsin(requireNotNull(asin)))
             } finally {
                 isLookingUp = false
             }
@@ -65,7 +67,7 @@ fun IsbnLookupScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Enter ISBN") },
+                title = { Text("Enter ISBN or ASIN") },
                 navigationIcon = {
                     IconButton(onClick = onCancel) {
                         Icon(
@@ -85,7 +87,7 @@ fun IsbnLookupScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Text(
-                "Enter a book’s ISBN-10 or ISBN-13 to look up its details.",
+                "Enter a book’s ISBN-10, ISBN-13 or Amazon ASIN to look up its details.",
                 style = MaterialTheme.typography.bodyLarge,
             )
             OutlinedTextField(
@@ -94,7 +96,7 @@ fun IsbnLookupScreen(
                     input = it
                 },
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("ISBN") },
+                label = { Text("ISBN or ASIN") },
                 placeholder = {
                     Text(
                         "e.g. 9780385533225",
@@ -103,25 +105,28 @@ fun IsbnLookupScreen(
                 },
                 trailingIcon = { IsbnCheckXButton(input) { input = it } },
                 singleLine = true,
-                isError = input.isNotBlank() && isbn13 == null,
+                isError = input.isNotBlank() && isbn13 == null && asin == null,
                 supportingText = {
                     when {
                         input.isBlank() -> Text("Hyphens and spaces are accepted.")
                         isbn13 != null && isbn13 != IsbnUtils.normalize(input) ->
                             Text("Will look up ISBN-13: $isbn13")
                         isbn13 != null -> Text("Valid ISBN")
-                        else -> Text("Enter a valid ISBN-10 or ISBN-13 check digit.")
+                        asin != null -> Text("Will search the web for this ASIN")
+                        else -> Text("Enter a valid ISBN-10 or ISBN-13 check digit, or an ASIN starting with B.")
                     }
                 },
                 keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Number,
+                    // Not the numeric keypad, since an ASIN has letters.
+                    capitalization = KeyboardCapitalization.Characters,
+                    keyboardType = KeyboardType.Ascii,
                     imeAction = ImeAction.Search,
                 ),
                 keyboardActions = KeyboardActions(onSearch = { startLookup() }),
             )
             Button(
                 onClick = { startLookup() },
-                enabled = isbn13 != null && !isLookingUp,
+                enabled = (isbn13 != null || asin != null) && !isLookingUp,
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 if (isLookingUp) {
@@ -137,7 +142,7 @@ fun IsbnLookupScreen(
                 }
             }
             Text(
-                "You can also add the book manually if its ISBN is unavailable.",
+                "You can also add the book manually if it has neither.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

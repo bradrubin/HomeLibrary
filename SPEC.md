@@ -73,6 +73,7 @@ Pure Kotlin, fully unit-tested:
 - `isbn10To13`, `isbn13To10` (only for 978 prefix).
 - `fromBarcode(raw)`: accept only 13-digit EAN codes starting with `978` or `979` that pass validation. Reject everything else — in particular the 5-digit price add-on barcode that appears next to many book barcodes, and UPC codes on mass-market paperbacks (show a message suggesting manual entry).
 - Manual entry accepts ISBN-10 or ISBN-13 with or without hyphens; converts to ISBN-13 for storage and lookup.
+- Manual entry also accepts an ASIN starting with B. The catalog services only know ISBNs, so web search and HomeChat identify the book, then a matching print edition fills it in as in an Amazon book list import, keeping the ASIN.
 
 ---
 
